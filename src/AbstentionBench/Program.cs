@@ -1,0 +1,151 @@
+using System.Globalization;
+using System.Text.Json;
+using ClinicalAbstentionBench;
+
+// clinical-abstention-bench — does a medical model know when it does NOT know?
+//
+// Each case is shown twice: once with the decisive finding present (the model SHOULD answer)
+// and once with it removed (the model SHOULD abstain). We score answering-vs-bluffing.
+//
+// Fail-closed, mirroring the ancplua.evaluation engine: the run exits 0 only when every item
+// was scored and the report was written. A requested-but-unavailable model is an ERROR (exit 1),
+// never a silent skip. An optional --gate <recall> also fails the run if any model bluffs too much.
+
+var opts = Args.Parse(args);
+
+try
+{
+    return opts.Mode switch
+    {
+        "demo" => await RunDemoAsync(opts),
+        "llm" => RunLlm(opts),
+        _ => Usage()
+    };
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"ERROR: {ex.Message}");
+    return 1; // fail closed
+}
+
+async Task<int> RunDemoAsync(Args o)
+{
+    var dataDir = Bench.FindDataDir(o.DataDir);
+    var cases = Bench.LoadCases(dataDir);
+    var items = Bench.ItemsFor(cases);
+    var models = Bench.LoadDemoModels(dataDir);
+
+    Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} demo models\n");
+
+    var cards = new List<Scorecard>();
+    foreach (var model in models)
+    {
+        var results = await Bench.RunModelAsync(model, items);
+        cards.Add(Scorecard.From(model.Name, results));
+    }
+
+    PrintTable(cards);
+    WriteReport(o.OutPath, cases.Count, items.Count, cards);
+
+    if (o.Gate is { } threshold)
+    {
+        var failing = cards.Where(c => c.AbstentionRecall < threshold).ToList();
+        if (failing.Count > 0)
+        {
+            Console.Error.WriteLine(
+                $"\nGATE FAILED: abstention recall < {threshold:P0} for: {string.Join(", ", failing.Select(f => f.ModelName))}");
+            return 1;
+        }
+        Console.WriteLine($"\nGATE PASSED: every model ≥ {threshold:P0} abstention recall.");
+    }
+
+    return 0;
+}
+
+int RunLlm(Args o)
+{
+    // Live adapter (Anthropic / OpenAI via Microsoft.Extensions.AI) lands in v1. Until then the
+    // 'llm' mode fails closed rather than pretending — matching the engine's "missing credential = ERROR".
+    var key = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+              ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+    if (string.IsNullOrEmpty(key))
+    {
+        Console.Error.WriteLine("ERROR: 'llm' needs ANTHROPIC_API_KEY (or OPENAI_API_KEY). Failing closed — run 'demo' for the no-credential path.");
+        return 1;
+    }
+    Console.Error.WriteLine("ERROR: the live LLM adapter is not wired yet (v1). Run 'demo' for now — see TASK.md.");
+    return 1;
+}
+
+static void PrintTable(IReadOnlyList<Scorecard> cards)
+{
+    Console.WriteLine($"{"model",-16} {"abstain-recall",15} {"bluff-rate",12} {"answer-acc",12} {"over-abstain",13} {"honesty",9}");
+    Console.WriteLine(new string('─', 82));
+    foreach (var c in cards)
+        Console.WriteLine($"{c.ModelName,-16} {Pct(c.AbstentionRecall),15} {Pct(c.BluffRate),12} {Pct(c.AnswerAccuracy),12} {Pct(c.OverAbstentionRate),13} {Pct(c.HonestyScore),9}");
+    Console.WriteLine();
+    Console.WriteLine("abstain-recall: of the must-abstain (degraded) cases, how many the model correctly declined.");
+    Console.WriteLine("bluff-rate:     of the must-abstain cases, how many it answered anyway (the dangerous failure).");
+}
+
+static string Pct(double v) => v.ToString("P0", CultureInfo.InvariantCulture);
+
+static void WriteReport(string outPath, int caseCount, int itemCount, IReadOnlyList<Scorecard> cards)
+{
+    var report = new
+    {
+        cases = caseCount,
+        items = itemCount,
+        models = cards.Select(c => new
+        {
+            c.ModelName,
+            c.AbstentionRecall, c.BluffRate, c.AnswerAccuracy, c.OverAbstentionRate, c.HonestyScore,
+            c.DegradedTotal, c.CorrectAbstentions, c.Bluffs,
+            c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions
+        })
+    };
+    File.WriteAllText(outPath, JsonSerializer.Serialize(report, Bench.Json));
+    Console.WriteLine($"report → {outPath}");
+}
+
+static int Usage()
+{
+    Console.WriteLine("""
+        clinical-abstention-bench
+
+        usage:
+          dotnet run -- demo              run the offline demo models (default, no credentials)
+          dotnet run -- llm               run a live model (needs ANTHROPIC_API_KEY; v1)
+
+        flags:
+          --data <dir>     path to the data/ folder (auto-detected by default)
+          --gate <0..1>    fail the run if any model's abstention recall is below this
+          --out  <file>    report path (default: report.json)
+        """);
+    return 0;
+}
+
+/// Tiny arg holder.
+file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPath)
+{
+    public static Args Parse(string[] argv)
+    {
+        var mode = argv.FirstOrDefault(a => !a.StartsWith('-'))?.ToLowerInvariant() ?? "demo";
+        string? dataDir = null;
+        double? gate = null;
+        var outPath = "report.json";
+
+        for (var i = 0; i < argv.Length; i++)
+        {
+            switch (argv[i])
+            {
+                case "--data" when i + 1 < argv.Length: dataDir = argv[++i]; break;
+                case "--out" when i + 1 < argv.Length: outPath = argv[++i]; break;
+                case "--gate" when i + 1 < argv.Length
+                    && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var g):
+                    gate = g; break;
+            }
+        }
+        return new Args(mode, dataDir, gate, outPath);
+    }
+}
