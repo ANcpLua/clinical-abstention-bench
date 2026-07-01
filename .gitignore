@@ -1,0 +1,15 @@
+# .NET build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+
+# Benchmark run artifacts
+report.json
+
+# IDE / OS
+.idea/
+.vs/
+*.DotSettings.user
+.DS_Store
