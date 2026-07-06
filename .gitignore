@@ -13,3 +13,7 @@ report.json
 .vs/
 *.DotSettings.user
 .DS_Store
+
+# Test coverage output
+TestResults/
+*.cobertura.xml

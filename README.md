@@ -1,5 +1,8 @@
 # clinical-abstention-bench
 
+[![CI](https://github.com/ANcpLua/clinical-abstention-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/ANcpLua/clinical-abstention-bench/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/ANcpLua/clinical-abstention-bench/branch/main/graph/badge.svg)](https://codecov.io/gh/ANcpLua/clinical-abstention-bench)
+
 **Does a medical AI know when it does _not_ know?**
 
 Most medical-AI benchmarks score *accuracy* — how often the model is right. This one scores something
