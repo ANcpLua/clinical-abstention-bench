@@ -18,8 +18,16 @@ jobs:
       - name: Build (warnings are errors)
         run: dotnet build -c Release
 
-      - name: Test
-        run: dotnet test -c Release --no-build
+      - name: Test (with coverage)
+        run: dotnet test -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ./TestResults
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
+        with:
+          files: ./TestResults/**/coverage.cobertura.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Demo run (offline, no credentials)
         run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo
