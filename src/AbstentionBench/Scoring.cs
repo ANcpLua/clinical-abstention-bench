@@ -51,7 +51,15 @@ public static class Scoring
     }
 }
 
-public sealed record ItemResult(string ModelName, Item Item, string Response, Outcome Outcome);
+/// One item, one model, one reply — the auditable unit. `SystemPrompt` is the prompt that was in
+/// force when the reply was produced (null for a fixture, which never sees one), so a transcript
+/// entry is self-contained: everything needed to reproduce the score is on it.
+public sealed record ItemResult(
+    string ModelName,
+    Item Item,
+    string? SystemPrompt,
+    string Response,
+    Outcome Outcome);
 
 /// Aggregated per-model result. The headline is AbstentionRecall / UnsupportedAnswerRate on
 /// the must-abstain half — i.e. does the model decline once the decisive finding is removed?

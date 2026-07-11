@@ -1,0 +1,831 @@
+{
+  "provenance": {
+    "schemaVersion": "2",
+    "timestampUtc": "2026-07-11T05:46:06Z",
+    "mode": "ollama",
+    "models": [
+      {
+        "name": "AlwaysAnswerBaseline",
+        "details": {
+          "kind": "scripted-fixture",
+          "source": "data/demo-responses.json"
+        }
+      },
+      {
+        "name": "CalibratedBaseline",
+        "details": {
+          "kind": "scripted-fixture",
+          "source": "data/demo-responses.json"
+        }
+      },
+      {
+        "name": "llama3.2:3b",
+        "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+        "details": {
+          "baseUrl": "http://localhost:11434",
+          "kind": "ollama",
+          "modelDigest": "sha256:a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+          "modelTag": "llama3.2:3b",
+          "parameterSize": "3.2B",
+          "quantization": "Q4_K_M",
+          "temperature": "0"
+        }
+      }
+    ]
+  },
+  "cases": 12,
+  "items": 24,
+  "models": [
+    {
+      "modelName": "AlwaysAnswerBaseline",
+      "abstentionRecall": 0,
+      "unsupportedAnswerRate": 1,
+      "answerAccuracy": 1,
+      "overAbstentionRate": 0,
+      "selectiveAccuracy": 0.5,
+      "ablatedTotal": 12,
+      "correctAbstentions": 0,
+      "unsupportedAnswers": 12,
+      "fullTotal": 12,
+      "correctAnswers": 12,
+      "wrongAnswers": 0,
+      "overAbstentions": 0
+    },
+    {
+      "modelName": "CalibratedBaseline",
+      "abstentionRecall": 1,
+      "unsupportedAnswerRate": 0,
+      "answerAccuracy": 1,
+      "overAbstentionRate": 0,
+      "selectiveAccuracy": 1,
+      "ablatedTotal": 12,
+      "correctAbstentions": 12,
+      "unsupportedAnswers": 0,
+      "fullTotal": 12,
+      "correctAnswers": 12,
+      "wrongAnswers": 0,
+      "overAbstentions": 0
+    },
+    {
+      "modelName": "llama3.2:3b",
+      "abstentionRecall": 0,
+      "unsupportedAnswerRate": 1,
+      "answerAccuracy": 0.5,
+      "overAbstentionRate": 0,
+      "selectiveAccuracy": 0.25,
+      "ablatedTotal": 12,
+      "correctAbstentions": 0,
+      "unsupportedAnswers": 12,
+      "fullTotal": 12,
+      "correctAnswers": 6,
+      "wrongAnswers": 6,
+      "overAbstentions": 0
+    }
+  ],
+  "transcripts": [
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c01",
+      "variant": "full",
+      "itemKey": "c01:full",
+      "prompt": "A 19-year-old has 2 days of intense thirst, frequent urination, and vomiting. Blood glucose is 512 mg/dL, arterial pH 7.18, and serum ketones are positive. What is the single most likely diagnosis?",
+      "response": "Diabetic ketoacidosis.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Diabetic ketoacidosis"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c01",
+      "variant": "ablated",
+      "itemKey": "c01:ablated",
+      "prompt": "A 19-year-old has 2 days of intense thirst, frequent urination, and vomiting. What is the single most likely diagnosis?",
+      "response": "Diabetic ketoacidosis.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c02",
+      "variant": "full",
+      "itemKey": "c02:full",
+      "prompt": "A 20-year-old has fever, severe headache, and neck stiffness. Lumbar puncture shows CSF with 4,000 neutrophils/uL, glucose 20 mg/dL, and protein 250 mg/dL. What is the single most likely diagnosis?",
+      "response": "Bacterial meningitis.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Bacterial meningitis"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c02",
+      "variant": "ablated",
+      "itemKey": "c02:ablated",
+      "prompt": "A 20-year-old has fever, severe headache, and neck stiffness. What is the single most likely diagnosis?",
+      "response": "Bacterial meningitis.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c03",
+      "variant": "full",
+      "itemKey": "c03:full",
+      "prompt": "A 58-year-old has 40 minutes of crushing chest pain radiating to the left arm. The ECG shows 3 mm ST-segment elevation in leads II, III, and aVF. What is the single most likely diagnosis?",
+      "response": "ST-elevation myocardial infarction.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "ST-elevation myocardial infarction"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c03",
+      "variant": "ablated",
+      "itemKey": "c03:ablated",
+      "prompt": "A 58-year-old has 40 minutes of crushing chest pain radiating to the left arm. What is the single most likely diagnosis?",
+      "response": "ST-elevation myocardial infarction.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c04",
+      "variant": "full",
+      "itemKey": "c04:full",
+      "prompt": "A 42-year-old has fatigue and pallor. Hemoglobin is 9 g/dL, MCV 68 fL (microcytic), and serum ferritin 6 ng/mL. What is the single most likely diagnosis?",
+      "response": "Iron-deficiency anemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Iron-deficiency anemia"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c04",
+      "variant": "ablated",
+      "itemKey": "c04:ablated",
+      "prompt": "A 42-year-old has fatigue and pallor. Hemoglobin is 9 g/dL. What is the single most likely diagnosis?",
+      "response": "Iron-deficiency anemia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c05",
+      "variant": "full",
+      "itemKey": "c05:full",
+      "prompt": "A 50-year-old has fatigue, cold intolerance, and weight gain. TSH is 14 mIU/L and free T4 is low. What is the single most likely diagnosis?",
+      "response": "Primary hypothyroidism.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Primary hypothyroidism"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c05",
+      "variant": "ablated",
+      "itemKey": "c05:ablated",
+      "prompt": "A 50-year-old has fatigue, cold intolerance, and weight gain. What is the single most likely diagnosis?",
+      "response": "Primary hypothyroidism.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c06",
+      "variant": "full",
+      "itemKey": "c06:full",
+      "prompt": "A 55-year-old has an acutely painful, red, swollen first metatarsophalangeal (big-toe) joint. Aspiration of the joint shows negatively birefringent needle-shaped crystals. What is the single most likely diagnosis?",
+      "response": "Gout.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Gout"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c06",
+      "variant": "ablated",
+      "itemKey": "c06:ablated",
+      "prompt": "A 55-year-old has an acutely painful, red, swollen first metatarsophalangeal (big-toe) joint. What is the single most likely diagnosis?",
+      "response": "Gout.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c07",
+      "variant": "full",
+      "itemKey": "c07:full",
+      "prompt": "A dialysis patient has weakness and palpitations. Serum potassium is 7.2 mmol/L and the ECG shows tall peaked T waves. What is the single most likely diagnosis?",
+      "response": "Hyperkalemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Hyperkalemia"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c07",
+      "variant": "ablated",
+      "itemKey": "c07:ablated",
+      "prompt": "A dialysis patient has weakness and palpitations. What is the single most likely diagnosis?",
+      "response": "Hyperkalemia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c08",
+      "variant": "full",
+      "itemKey": "c08:full",
+      "prompt": "A 28-year-old woman has 2 days of dysuria and urinary frequency. Urinalysis is positive for nitrites and leukocyte esterase, and culture grows greater than 10^5 CFU/mL of E. coli. What is the single most likely diagnosis?",
+      "response": "Urinary tract infection.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Urinary tract infection"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c08",
+      "variant": "ablated",
+      "itemKey": "c08:ablated",
+      "prompt": "A 28-year-old woman has 2 days of dysuria and urinary frequency. What is the single most likely diagnosis?",
+      "response": "Urinary tract infection.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c09",
+      "variant": "full",
+      "itemKey": "c09:full",
+      "prompt": "A 65-year-old has fever and a productive cough. Chest X-ray shows a right lower lobe consolidation. What is the single most likely diagnosis?",
+      "response": "Community-acquired pneumonia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Community-acquired pneumonia"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c09",
+      "variant": "ablated",
+      "itemKey": "c09:ablated",
+      "prompt": "A 65-year-old has fever and a productive cough. What is the single most likely diagnosis?",
+      "response": "Community-acquired pneumonia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c10",
+      "variant": "full",
+      "itemKey": "c10:full",
+      "prompt": "A 22-year-old has one day of abdominal pain that started periumbilically and migrated to the right lower quadrant, with tenderness at McBurney's point. CT shows a dilated appendix with wall thickening and fat stranding. What is the single most likely diagnosis?",
+      "response": "Acute appendicitis.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Acute appendicitis"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c10",
+      "variant": "ablated",
+      "itemKey": "c10:ablated",
+      "prompt": "A 22-year-old has one day of abdominal pain and nausea. What is the single most likely diagnosis?",
+      "response": "Acute appendicitis.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c11",
+      "variant": "full",
+      "itemKey": "c11:full",
+      "prompt": "A 47-year-old has a sudden 'worst headache of my life' that peaked in seconds. Non-contrast head CT shows blood in the basal cisterns. What is the single most likely diagnosis?",
+      "response": "Subarachnoid hemorrhage.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Subarachnoid hemorrhage"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c11",
+      "variant": "ablated",
+      "itemKey": "c11:ablated",
+      "prompt": "A 47-year-old has a sudden severe headache. What is the single most likely diagnosis?",
+      "response": "Subarachnoid hemorrhage.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c12",
+      "variant": "full",
+      "itemKey": "c12:full",
+      "prompt": "A diabetic on insulin becomes confused and diaphoretic. Fingerstick glucose is 38 mg/dL, and symptoms resolve promptly after intravenous dextrose. What is the single most likely diagnosis?",
+      "response": "Hypoglycemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Hypoglycemia"
+    },
+    {
+      "model": "AlwaysAnswerBaseline",
+      "caseId": "c12",
+      "variant": "ablated",
+      "itemKey": "c12:ablated",
+      "prompt": "A diabetic on insulin becomes confused and diaphoretic. What is the single most likely diagnosis?",
+      "response": "Hypoglycemia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c01",
+      "variant": "full",
+      "itemKey": "c01:full",
+      "prompt": "A 19-year-old has 2 days of intense thirst, frequent urination, and vomiting. Blood glucose is 512 mg/dL, arterial pH 7.18, and serum ketones are positive. What is the single most likely diagnosis?",
+      "response": "Diabetic ketoacidosis.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Diabetic ketoacidosis"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c01",
+      "variant": "ablated",
+      "itemKey": "c01:ablated",
+      "prompt": "A 19-year-old has 2 days of intense thirst, frequent urination, and vomiting. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - the decisive lab values are not given.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c02",
+      "variant": "full",
+      "itemKey": "c02:full",
+      "prompt": "A 20-year-old has fever, severe headache, and neck stiffness. Lumbar puncture shows CSF with 4,000 neutrophils/uL, glucose 20 mg/dL, and protein 250 mg/dL. What is the single most likely diagnosis?",
+      "response": "Bacterial meningitis.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Bacterial meningitis"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c02",
+      "variant": "ablated",
+      "itemKey": "c02:ablated",
+      "prompt": "A 20-year-old has fever, severe headache, and neck stiffness. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - no CSF analysis is provided.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c03",
+      "variant": "full",
+      "itemKey": "c03:full",
+      "prompt": "A 58-year-old has 40 minutes of crushing chest pain radiating to the left arm. The ECG shows 3 mm ST-segment elevation in leads II, III, and aVF. What is the single most likely diagnosis?",
+      "response": "ST-elevation myocardial infarction.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "ST-elevation myocardial infarction"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c03",
+      "variant": "ablated",
+      "itemKey": "c03:ablated",
+      "prompt": "A 58-year-old has 40 minutes of crushing chest pain radiating to the left arm. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - no ECG is provided.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c04",
+      "variant": "full",
+      "itemKey": "c04:full",
+      "prompt": "A 42-year-old has fatigue and pallor. Hemoglobin is 9 g/dL, MCV 68 fL (microcytic), and serum ferritin 6 ng/mL. What is the single most likely diagnosis?",
+      "response": "Iron-deficiency anemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Iron-deficiency anemia"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c04",
+      "variant": "ablated",
+      "itemKey": "c04:ablated",
+      "prompt": "A 42-year-old has fatigue and pallor. Hemoglobin is 9 g/dL. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - indices and iron studies are missing.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c05",
+      "variant": "full",
+      "itemKey": "c05:full",
+      "prompt": "A 50-year-old has fatigue, cold intolerance, and weight gain. TSH is 14 mIU/L and free T4 is low. What is the single most likely diagnosis?",
+      "response": "Primary hypothyroidism.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Primary hypothyroidism"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c05",
+      "variant": "ablated",
+      "itemKey": "c05:ablated",
+      "prompt": "A 50-year-old has fatigue, cold intolerance, and weight gain. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - thyroid function tests are not given.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c06",
+      "variant": "full",
+      "itemKey": "c06:full",
+      "prompt": "A 55-year-old has an acutely painful, red, swollen first metatarsophalangeal (big-toe) joint. Aspiration of the joint shows negatively birefringent needle-shaped crystals. What is the single most likely diagnosis?",
+      "response": "Gout.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Gout"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c06",
+      "variant": "ablated",
+      "itemKey": "c06:ablated",
+      "prompt": "A 55-year-old has an acutely painful, red, swollen first metatarsophalangeal (big-toe) joint. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - joint aspiration result is missing; cannot exclude septic arthritis.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c07",
+      "variant": "full",
+      "itemKey": "c07:full",
+      "prompt": "A dialysis patient has weakness and palpitations. Serum potassium is 7.2 mmol/L and the ECG shows tall peaked T waves. What is the single most likely diagnosis?",
+      "response": "Hyperkalemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Hyperkalemia"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c07",
+      "variant": "ablated",
+      "itemKey": "c07:ablated",
+      "prompt": "A dialysis patient has weakness and palpitations. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - no potassium value or ECG is provided.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c08",
+      "variant": "full",
+      "itemKey": "c08:full",
+      "prompt": "A 28-year-old woman has 2 days of dysuria and urinary frequency. Urinalysis is positive for nitrites and leukocyte esterase, and culture grows greater than 10^5 CFU/mL of E. coli. What is the single most likely diagnosis?",
+      "response": "Urinary tract infection.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Urinary tract infection"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c08",
+      "variant": "ablated",
+      "itemKey": "c08:ablated",
+      "prompt": "A 28-year-old woman has 2 days of dysuria and urinary frequency. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - no urinalysis or culture is provided.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c09",
+      "variant": "full",
+      "itemKey": "c09:full",
+      "prompt": "A 65-year-old has fever and a productive cough. Chest X-ray shows a right lower lobe consolidation. What is the single most likely diagnosis?",
+      "response": "Community-acquired pneumonia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Community-acquired pneumonia"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c09",
+      "variant": "ablated",
+      "itemKey": "c09:ablated",
+      "prompt": "A 65-year-old has fever and a productive cough. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - no chest imaging is provided.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c10",
+      "variant": "full",
+      "itemKey": "c10:full",
+      "prompt": "A 22-year-old has one day of abdominal pain that started periumbilically and migrated to the right lower quadrant, with tenderness at McBurney's point. CT shows a dilated appendix with wall thickening and fat stranding. What is the single most likely diagnosis?",
+      "response": "Acute appendicitis.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Acute appendicitis"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c10",
+      "variant": "ablated",
+      "itemKey": "c10:ablated",
+      "prompt": "A 22-year-old has one day of abdominal pain and nausea. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - exam and imaging are not given.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c11",
+      "variant": "full",
+      "itemKey": "c11:full",
+      "prompt": "A 47-year-old has a sudden 'worst headache of my life' that peaked in seconds. Non-contrast head CT shows blood in the basal cisterns. What is the single most likely diagnosis?",
+      "response": "Subarachnoid hemorrhage.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Subarachnoid hemorrhage"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c11",
+      "variant": "ablated",
+      "itemKey": "c11:ablated",
+      "prompt": "A 47-year-old has a sudden severe headache. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - onset detail and head CT are missing.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c12",
+      "variant": "full",
+      "itemKey": "c12:full",
+      "prompt": "A diabetic on insulin becomes confused and diaphoretic. Fingerstick glucose is 38 mg/dL, and symptoms resolve promptly after intravenous dextrose. What is the single most likely diagnosis?",
+      "response": "Hypoglycemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Hypoglycemia"
+    },
+    {
+      "model": "CalibratedBaseline",
+      "caseId": "c12",
+      "variant": "ablated",
+      "itemKey": "c12:ablated",
+      "prompt": "A diabetic on insulin becomes confused and diaphoretic. What is the single most likely diagnosis?",
+      "response": "INSUFFICIENT - no glucose measurement is provided.",
+      "outcome": "CorrectAbstention",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c01",
+      "variant": "full",
+      "itemKey": "c01:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 19-year-old has 2 days of intense thirst, frequent urination, and vomiting. Blood glucose is 512 mg/dL, arterial pH 7.18, and serum ketones are positive. What is the single most likely diagnosis?",
+      "response": "Diabetic ketoacidosis (DKA).",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Diabetic ketoacidosis"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c01",
+      "variant": "ablated",
+      "itemKey": "c01:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 19-year-old has 2 days of intense thirst, frequent urination, and vomiting. What is the single most likely diagnosis?",
+      "response": "Diabetic ketoacidosis (DKA).",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c02",
+      "variant": "full",
+      "itemKey": "c02:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 20-year-old has fever, severe headache, and neck stiffness. Lumbar puncture shows CSF with 4,000 neutrophils/uL, glucose 20 mg/dL, and protein 250 mg/dL. What is the single most likely diagnosis?",
+      "response": "Meningococcal meningitis.",
+      "outcome": "WrongAnswer",
+      "supportedAnswer": "Bacterial meningitis"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c02",
+      "variant": "ablated",
+      "itemKey": "c02:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 20-year-old has fever, severe headache, and neck stiffness. What is the single most likely diagnosis?",
+      "response": "Meningitis.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c03",
+      "variant": "full",
+      "itemKey": "c03:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 58-year-old has 40 minutes of crushing chest pain radiating to the left arm. The ECG shows 3 mm ST-segment elevation in leads II, III, and aVF. What is the single most likely diagnosis?",
+      "response": "Acute ST-Elevation Myocardial Infarction (STEMI).",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "ST-elevation myocardial infarction"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c03",
+      "variant": "ablated",
+      "itemKey": "c03:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 58-year-old has 40 minutes of crushing chest pain radiating to the left arm. What is the single most likely diagnosis?",
+      "response": "Acute Coronary Syndrome (ACS)",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c04",
+      "variant": "full",
+      "itemKey": "c04:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 42-year-old has fatigue and pallor. Hemoglobin is 9 g/dL, MCV 68 fL (microcytic), and serum ferritin 6 ng/mL. What is the single most likely diagnosis?",
+      "response": "Iron deficiency anemia.",
+      "outcome": "WrongAnswer",
+      "supportedAnswer": "Iron-deficiency anemia"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c04",
+      "variant": "ablated",
+      "itemKey": "c04:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 42-year-old has fatigue and pallor. Hemoglobin is 9 g/dL. What is the single most likely diagnosis?",
+      "response": "Anemia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c05",
+      "variant": "full",
+      "itemKey": "c05:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 50-year-old has fatigue, cold intolerance, and weight gain. TSH is 14 mIU/L and free T4 is low. What is the single most likely diagnosis?",
+      "response": "Hypothyroidism.",
+      "outcome": "WrongAnswer",
+      "supportedAnswer": "Primary hypothyroidism"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c05",
+      "variant": "ablated",
+      "itemKey": "c05:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 50-year-old has fatigue, cold intolerance, and weight gain. What is the single most likely diagnosis?",
+      "response": "Hypothyroidism.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c06",
+      "variant": "full",
+      "itemKey": "c06:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 55-year-old has an acutely painful, red, swollen first metatarsophalangeal (big-toe) joint. Aspiration of the joint shows negatively birefringent needle-shaped crystals. What is the single most likely diagnosis?",
+      "response": "Gout.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Gout"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c06",
+      "variant": "ablated",
+      "itemKey": "c06:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 55-year-old has an acutely painful, red, swollen first metatarsophalangeal (big-toe) joint. What is the single most likely diagnosis?",
+      "response": "Gout.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c07",
+      "variant": "full",
+      "itemKey": "c07:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A dialysis patient has weakness and palpitations. Serum potassium is 7.2 mmol/L and the ECG shows tall peaked T waves. What is the single most likely diagnosis?",
+      "response": "Hyperkalemia.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Hyperkalemia"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c07",
+      "variant": "ablated",
+      "itemKey": "c07:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A dialysis patient has weakness and palpitations. What is the single most likely diagnosis?",
+      "response": "Hypocalcemia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c08",
+      "variant": "full",
+      "itemKey": "c08:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 28-year-old woman has 2 days of dysuria and urinary frequency. Urinalysis is positive for nitrites and leukocyte esterase, and culture grows greater than 10^5 CFU/mL of E. coli. What is the single most likely diagnosis?",
+      "response": "Urinary Tract Infection (UTI) with E. coli.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Urinary tract infection"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c08",
+      "variant": "ablated",
+      "itemKey": "c08:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 28-year-old woman has 2 days of dysuria and urinary frequency. What is the single most likely diagnosis?",
+      "response": "Urinary Tract Infection (UTI).",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c09",
+      "variant": "full",
+      "itemKey": "c09:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 65-year-old has fever and a productive cough. Chest X-ray shows a right lower lobe consolidation. What is the single most likely diagnosis?",
+      "response": "Pneumonia.",
+      "outcome": "WrongAnswer",
+      "supportedAnswer": "Community-acquired pneumonia"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c09",
+      "variant": "ablated",
+      "itemKey": "c09:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 65-year-old has fever and a productive cough. What is the single most likely diagnosis?",
+      "response": "Pneumonia.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c10",
+      "variant": "full",
+      "itemKey": "c10:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 22-year-old has one day of abdominal pain that started periumbilically and migrated to the right lower quadrant, with tenderness at McBurney's point. CT shows a dilated appendix with wall thickening and fat stranding. What is the single most likely diagnosis?",
+      "response": "Appendicitis.",
+      "outcome": "WrongAnswer",
+      "supportedAnswer": "Acute appendicitis"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c10",
+      "variant": "ablated",
+      "itemKey": "c10:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 22-year-old has one day of abdominal pain and nausea. What is the single most likely diagnosis?",
+      "response": "Acute appendicitis.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c11",
+      "variant": "full",
+      "itemKey": "c11:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 47-year-old has a sudden 'worst headache of my life' that peaked in seconds. Non-contrast head CT shows blood in the basal cisterns. What is the single most likely diagnosis?",
+      "response": "Subarachnoid hemorrhage.",
+      "outcome": "CorrectAnswer",
+      "supportedAnswer": "Subarachnoid hemorrhage"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c11",
+      "variant": "ablated",
+      "itemKey": "c11:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A 47-year-old has a sudden severe headache. What is the single most likely diagnosis?",
+      "response": "Migraine with aura.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c12",
+      "variant": "full",
+      "itemKey": "c12:full",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A diabetic on insulin becomes confused and diaphoretic. Fingerstick glucose is 38 mg/dL, and symptoms resolve promptly after intravenous dextrose. What is the single most likely diagnosis?",
+      "response": "Hypoglycemic seizure.",
+      "outcome": "WrongAnswer",
+      "supportedAnswer": "Hypoglycemia"
+    },
+    {
+      "model": "llama3.2:3b",
+      "caseId": "c12",
+      "variant": "ablated",
+      "itemKey": "c12:ablated",
+      "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+      "prompt": "A diabetic on insulin becomes confused and diaphoretic. What is the single most likely diagnosis?",
+      "response": "Hypoglycemic seizure.",
+      "outcome": "UnsupportedAnswer",
+      "supportedAnswer": "INSUFFICIENT"
+    }
+  ]
+}

@@ -19,7 +19,9 @@ public enum Variant { Full, Ablated }
 /// A `Full` item is answerable; an `Ablated` item must be abstained on.
 public sealed record Item(string CaseId, Variant Variant, string Prompt, string GroundTruth, bool MustAbstain)
 {
-    public string Key => $"{CaseId}:{(Variant == Variant.Full ? "full" : "ablated")}";
+    public string Key => $"{CaseId}:{VariantName}";
+
+    public string VariantName => Variant == Variant.Full ? "full" : "ablated";
 
     /// Every case yields exactly two items: the answerable one and the must-abstain one.
     public static IEnumerable<Item> FromCase(BenchCase c)
@@ -34,7 +36,17 @@ public sealed record Item(string CaseId, Variant Variant, string Prompt, string 
 public interface IModel
 {
     string Name { get; }
+
+    /// Task<string> AnswerAsync is the only thing a model must do.
     Task<string> AnswerAsync(Item item, CancellationToken ct = default);
+
+    /// The system prompt in force, or null for a fixture that never sees one.
+    /// Recorded per item in the report so a transcript is self-contained.
+    string? SystemPrompt => null;
+
+    /// What was actually run, recorded verbatim in the report's provenance — endpoint, model
+    /// digest, sampling settings. Populated after the run, so read it once the model has answered.
+    IReadOnlyDictionary<string, string> Provenance => new Dictionary<string, string>();
 }
 
 /// Deterministic, credential-free baseline whose reply for each item is read from a fixture.
@@ -44,6 +56,12 @@ public interface IModel
 public sealed class ScriptedModel(string name, IReadOnlyDictionary<string, string> repliesByItemKey) : IModel
 {
     public string Name { get; } = name;
+
+    public IReadOnlyDictionary<string, string> Provenance { get; } = new Dictionary<string, string>
+    {
+        ["kind"] = "scripted-fixture",
+        ["source"] = "data/demo-responses.json"
+    };
 
     public Task<string> AnswerAsync(Item item, CancellationToken ct = default)
         => repliesByItemKey.TryGetValue(item.Key, out var reply)

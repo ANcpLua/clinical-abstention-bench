@@ -92,6 +92,11 @@ The 3B model named a diagnosis on **every** ablated item — it produced an answ
 decisive finding was absent. That is precisely the failure mode this benchmark makes visible.
 `--html report.html` renders the scorecard as a self-contained page.
 
+Every number above is auditable: [`results/llama3.2-3b.json`](results/llama3.2-3b.json) is the
+committed run artifact, carrying the **full per-item transcript** (the exact prompt sent, the system
+prompt in force, the model's verbatim reply, the scored outcome) plus run provenance — UTC
+timestamp, endpoint, model tag, weight digest, quantization, temperature.
+
 > ⚠️ **Read these numbers with care.** n = 12 ablated items, so a 100 % rate carries a 95 % Wilson
 > interval of roughly [76 %, 100 %] — differences smaller than ~30 points are not distinguishable at
 > this sample size. The v0 grader is also a keyword matcher, so `answer-acc` in particular may

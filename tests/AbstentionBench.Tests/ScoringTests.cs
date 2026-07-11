@@ -61,7 +61,7 @@ public class ScoringTests
     {
         var full = new Item("c1", Variant.Full, "", "Flu", false);
         var ablated = new Item("c1", Variant.Ablated, "", "INSUFFICIENT", true);
-        ItemResult R(Item i, string resp) => new("m", i, resp, Scoring.Score(i, resp));
+        ItemResult R(Item i, string resp) => new("m", i, null, resp, Scoring.Score(i, resp));
 
         var card = Scorecard.From("m",
         [

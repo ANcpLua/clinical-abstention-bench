@@ -87,7 +87,7 @@ public static class Bench
         foreach (var item in items)
         {
             var response = await model.AnswerAsync(item, ct);
-            results.Add(new ItemResult(model.Name, item, response, Scoring.Score(item, response)));
+            results.Add(new ItemResult(model.Name, item, model.SystemPrompt, response, Scoring.Score(item, response)));
         }
         return results;
     }

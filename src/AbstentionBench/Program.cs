@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 using ClinicalAbstentionBench;
 
 // clinical-abstention-bench — selective prediction on clinical vignettes.
@@ -49,14 +48,20 @@ async Task<int> RunBenchAsync(Args o, IModel? liveModel = null)
     Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} models\n");
 
     var cards = new List<Scorecard>();
+    var resultsByModel = new Dictionary<string, IReadOnlyList<ItemResult>>();
     foreach (var model in models)
     {
         var results = await Bench.RunModelAsync(model, items);
+        resultsByModel[model.Name] = results;
         cards.Add(Scorecard.From(model.Name, results));
     }
 
     PrintTable(cards);
-    WriteReport(o.OutPath, cases.Count, items.Count, cards);
+
+    var report = Report.Build(o.Mode, cases.Count, items.Count, models, resultsByModel, cards, DateTimeOffset.UtcNow);
+    Report.Write(o.OutPath, report);
+    Console.WriteLine($"report → {o.OutPath}  ({report.Transcripts.Count} per-item transcripts)");
+
     if (o.HtmlPath is { } htmlPath)
     {
         File.WriteAllText(htmlPath, ScorecardPage.Render(cases.Count, items.Count, cards, cases[0]));
@@ -105,24 +110,6 @@ static void PrintTable(IReadOnlyList<Scorecard> cards)
 }
 
 static string Pct(double v) => v.ToString("P0", CultureInfo.InvariantCulture);
-
-static void WriteReport(string outPath, int caseCount, int itemCount, IReadOnlyList<Scorecard> cards)
-{
-    var report = new
-    {
-        cases = caseCount,
-        items = itemCount,
-        models = cards.Select(c => new
-        {
-            c.ModelName,
-            c.AbstentionRecall, c.UnsupportedAnswerRate, c.AnswerAccuracy, c.OverAbstentionRate, c.SelectiveAccuracy,
-            c.AblatedTotal, c.CorrectAbstentions, c.UnsupportedAnswers,
-            c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions
-        })
-    };
-    File.WriteAllText(outPath, JsonSerializer.Serialize(report, Bench.Json));
-    Console.WriteLine($"report → {outPath}");
-}
 
 static int Usage()
 {
