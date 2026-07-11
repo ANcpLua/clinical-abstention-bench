@@ -18,17 +18,29 @@ public class GateTests
         var gate = Gate.Check([CardWithRecall("Above", 10, 10), CardWithRecall("AlsoAbove", 9, 10)], 0.9);
 
         Assert.True(gate.Passed);
-        Assert.Empty(gate.FailingModels);
+        Assert.Empty(gate.Failures);
     }
 
     [Fact]
-    public void Check_FailsAndNamesTheModelBelowTheThreshold()
+    public void Check_FailsAndNamesTheModelAndTheMetricBelowTheThreshold()
     {
         var gate = Gate.Check([CardWithRecall("Above", 10, 10), CardWithRecall("Below", 0, 10)], 0.9);
 
         Assert.False(gate.Passed);
         Assert.Equal(["Below"], gate.FailingModels);
+
+        var failure = gate.Failures.Single();
+        Assert.Equal("abstention-recall", failure.Metric);
+        Assert.Equal(0.0, failure.Actual);
+        Assert.Equal(0.9, failure.Threshold);
+        // Pinned to the invariant culture — a CI runner in a different locale must log the same string.
+        Assert.Equal("Below (abstention-recall 0 % < 90 %)", failure.ToString());
     }
+
+    /// With no threshold set there is nothing to enforce, and the run must not fail.
+    [Fact]
+    public void Check_WithNoThresholds_Passes()
+        => Assert.True(Gate.Check([CardWithRecall("Anything", 0, 10)]).Passed);
 
     /// The defect this flag had: an unfiltered demo run always contains AlwaysAnswerBaseline,
     /// whose recall is 0 by construction, so every gate failed regardless of the real model.

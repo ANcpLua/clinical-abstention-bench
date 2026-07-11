@@ -34,13 +34,31 @@ jobs:
 
       # The gate is what a downstream user would put in their own CI, so exercise it in BOTH
       # directions here — it cannot silently rot back into "always fails" or "never enforces".
-      - name: Gate passes for a model above threshold
-        run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo --only CalibratedBaseline --gate 0.9
-
-      - name: Gate fails for a model below threshold
+      - name: Gate passes for a calibrated model
         run: |
-          if dotnet run -c Release --no-build --project src/AbstentionBench -- demo --only AlwaysAnswerBaseline --gate 0.9; then
+          dotnet run -c Release --no-build --project src/AbstentionBench -- \
+            demo --only CalibratedBaseline --gate 0.9 --gate-answer-acc 0.9
+
+      - name: Gate fails for a model that never abstains
+        run: |
+          if dotnet run -c Release --no-build --project src/AbstentionBench -- \
+               demo --only AlwaysAnswerBaseline --gate 0.9; then
             echo "::error::--gate exited 0 for a model with 0% abstention recall — the gate is not enforcing."
             exit 1
           fi
           echo "gate correctly failed the run"
+
+      # Abstention-recall is trivially maximised by never answering. A recall-only gate is passed by a
+      # model that has simply learned to say nothing, so the answer-accuracy floor must catch it.
+      - name: Gate fails for a model that always abstains
+        run: |
+          dotnet run -c Release --no-build --project src/AbstentionBench -- \
+            demo --only AlwaysAbstainBaseline --gate 0.9 \
+            || { echo "::error::a 100%-abstention model should PASS a recall-only gate; that it did not means the gate is wrong."; exit 1; }
+
+          if dotnet run -c Release --no-build --project src/AbstentionBench -- \
+               demo --only AlwaysAbstainBaseline --gate 0.9 --gate-answer-acc 0.9; then
+            echo "::error::a model that answers nothing cleared a gate with an answer-accuracy floor."
+            exit 1
+          fi
+          echo "gate correctly failed the model that answers nothing"

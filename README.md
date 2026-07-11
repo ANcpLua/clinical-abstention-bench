@@ -42,10 +42,24 @@ Cells are percentages; brackets are the **95 % Wilson score interval**. They are
 rate, everywhere — console, JSON and HTML — because with twelve cases a bare "100 %" invites a reader
 to treat it as certainty. It is not: 12 of 12 is `[76 %, 100 %]`.
 
-`AlwaysAnswerBaseline` and `CalibratedBaseline` are deterministic **fixture** models (no API keys) so
-the harness runs anywhere, including CI. They exist to show the benchmark *discriminates*. Note they
-are keyed on item id and **never see a system prompt**, so they are not a like-for-like comparison
-with a live model — read them as reference points, not competitors.
+The three baselines are deterministic **fixture** models (no API keys) so the harness runs anywhere,
+including CI. They are the two degenerate poles and the target, and together they are the argument
+that the benchmark measures something real:
+
+| baseline | behaviour | abstain-recall | answer-acc | selective-acc |
+|---|---|---|---|---|
+| `AlwaysAnswerBaseline` | never declines | 0 % | 100 % | **50 %** |
+| `AlwaysAbstainBaseline` | always declines | **100 %** | 0 % | **50 %** |
+| `CalibratedBaseline` | declines only when the evidence is gone | 100 % | 100 % | **100 %** |
+
+Read the middle row carefully. **Abstention-recall — the metric this benchmark is named after — is
+trivially maximised by never answering anything.** A model that says "INSUFFICIENT" to every prompt
+scores a perfect 100 % on it. That is why the headline is *selective accuracy*, which refuses to be
+gamed: the model that never declines and the model that always declines land on **exactly the same
+score**, each right about half the benchmark. Only reading the evidence beats them.
+
+Note the baselines are keyed on item id and **never see a system prompt**, so they are not a
+like-for-like comparison with a live model — read them as reference points, not competitors.
 
 ## Metrics
 
@@ -73,17 +87,23 @@ dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b --html re
 
 ### Gating a model in your own CI
 
-`--gate <recall>` exits non-zero if a model's abstention-recall falls below the threshold. It
-applies to **every model in the run**, so pair it with `--only` or `--no-baselines` to point it at
-the model you actually care about — `AlwaysAnswerBaseline` has 0 % recall by construction and would
-fail any threshold:
-
 ```bash
-dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b --no-baselines --gate 0.9
+dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b \
+  --no-baselines --gate 0.9 --gate-answer-acc 0.9
 # → exits 1 unless the model abstains on ≥ 90 % of the must-abstain items
+#   AND answers ≥ 90 % of the answerable ones correctly
 ```
 
-`--only <name>` is repeatable and matches model names case-insensitively; a name that matches no
+**Use both thresholds.** `--gate` alone checks abstention-recall, and as the table above shows, a
+model that answers *nothing* scores 100 % on that. A recall-only gate is passed by a model that has
+simply learned to say nothing; `--gate-answer-acc` is what makes the gate mean *knows when to speak
+**and** knows the medicine*. CI exercises all three directions — a calibrated model passing, a model
+that never abstains failing, and a model that always abstains clearing the recall gate but failing
+the accuracy floor — so this cannot silently rot.
+
+The gate applies to **every model in the run**, so pair it with `--only` or `--no-baselines` to point
+it at the model you care about: `AlwaysAnswerBaseline` has 0 % recall by construction and would fail
+any threshold. `--only <name>` is repeatable and matches case-insensitively; a name that matches no
 model is an **error**, not a silent no-op, so a typo can't turn a gated run green.
 
 ## A real model, measured

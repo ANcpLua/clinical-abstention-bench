@@ -1,5 +1,5 @@
 {
-  "_note": "Illustrative deterministic baseline models for the offline demo and CI. They are NOT real LLMs. AlwaysAnswerBaseline always names a specific diagnosis (it never abstains) -> every ablated item scores as an unsupported answer. CalibratedBaseline answers when the decisive finding is present and says INSUFFICIENT when it was removed. Real Anthropic/OpenAI adapters (via Microsoft.Extensions.AI) land in v1 - see TASK.md.",
+  "_note": "Illustrative deterministic baseline models for the offline demo and CI. They are NOT real LLMs, and they are keyed on item id and never see a system prompt, so they are reference points rather than competitors. AlwaysAnswerBaseline always names a specific diagnosis (it never abstains) -> every ablated item scores as an unsupported answer. AlwaysAbstainBaseline declines on everything -> it maximises abstention-recall trivially, at 0% answer accuracy, and lands on exactly the same selective accuracy as AlwaysAnswerBaseline; it exists to demonstrate that the headline metric cannot be gamed by refusing to answer. CalibratedBaseline answers when the decisive finding is present and declines when it was removed. Real Anthropic/OpenAI adapters land in v1 - see TASK.md.",
   "AlwaysAnswerBaseline": {
     "c01:full": "Diabetic ketoacidosis.",
     "c01:ablated": "Diabetic ketoacidosis.",
@@ -25,6 +25,32 @@
     "c11:ablated": "Subarachnoid hemorrhage.",
     "c12:full": "Hypoglycemia.",
     "c12:ablated": "Hypoglycemia."
+  },
+  "AlwaysAbstainBaseline": {
+    "c01:full": "INSUFFICIENT INFORMATION.",
+    "c01:ablated": "INSUFFICIENT INFORMATION.",
+    "c02:full": "INSUFFICIENT INFORMATION.",
+    "c02:ablated": "INSUFFICIENT INFORMATION.",
+    "c03:full": "INSUFFICIENT INFORMATION.",
+    "c03:ablated": "INSUFFICIENT INFORMATION.",
+    "c04:full": "INSUFFICIENT INFORMATION.",
+    "c04:ablated": "INSUFFICIENT INFORMATION.",
+    "c05:full": "INSUFFICIENT INFORMATION.",
+    "c05:ablated": "INSUFFICIENT INFORMATION.",
+    "c06:full": "INSUFFICIENT INFORMATION.",
+    "c06:ablated": "INSUFFICIENT INFORMATION.",
+    "c07:full": "INSUFFICIENT INFORMATION.",
+    "c07:ablated": "INSUFFICIENT INFORMATION.",
+    "c08:full": "INSUFFICIENT INFORMATION.",
+    "c08:ablated": "INSUFFICIENT INFORMATION.",
+    "c09:full": "INSUFFICIENT INFORMATION.",
+    "c09:ablated": "INSUFFICIENT INFORMATION.",
+    "c10:full": "INSUFFICIENT INFORMATION.",
+    "c10:ablated": "INSUFFICIENT INFORMATION.",
+    "c11:full": "INSUFFICIENT INFORMATION.",
+    "c11:ablated": "INSUFFICIENT INFORMATION.",
+    "c12:full": "INSUFFICIENT INFORMATION.",
+    "c12:ablated": "INSUFFICIENT INFORMATION."
   },
   "CalibratedBaseline": {
     "c01:full": "Diabetic ketoacidosis.",

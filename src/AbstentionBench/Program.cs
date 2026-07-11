@@ -68,19 +68,24 @@ async Task<int> RunBenchAsync(Args o, IModel? liveModel = null)
         Console.WriteLine($"html report → {htmlPath}");
     }
 
-    if (o.Gate is { } threshold)
+    if (o.Gate is not null || o.GateAnswerAccuracy is not null)
     {
-        var gate = Gate.Check(cards, threshold);
+        var gate = Gate.Check(cards, o.Gate, o.GateAnswerAccuracy);
         if (!gate.Passed)
         {
-            Console.Error.WriteLine(
-                $"\nGATE FAILED: abstention recall < {threshold:P0} for: {string.Join(", ", gate.FailingModels)}");
+            Console.Error.WriteLine($"\nGATE FAILED: {string.Join("; ", gate.Failures)}");
             return 1;
         }
-        Console.WriteLine($"\nGATE PASSED: every model in this run is ≥ {threshold:P0} abstention recall.");
+        Console.WriteLine($"\nGATE PASSED: every model in this run cleared {Thresholds(o)}.");
     }
 
     return 0;
+
+    static string Thresholds(Args o) => string.Join(" and ", new[]
+    {
+        o.Gate is { } r ? $"abstention-recall ≥ {r:P0}" : null,
+        o.GateAnswerAccuracy is { } a ? $"answer-accuracy ≥ {a:P0}" : null
+    }.Where(s => s is not null));
 }
 
 int RunLlm(Args o)
@@ -122,19 +127,23 @@ static int Usage()
           dotnet run -- llm               run a live cloud model (needs ANTHROPIC_API_KEY; v1)
 
         flags:
-          --data  <dir>    path to the data/ folder (auto-detected by default)
-          --gate  <0..1>   fail the run if ANY model in it has abstention recall below this.
-                           Combine with --only / --no-baselines: AlwaysAnswerBaseline has 0 %
-                           recall by construction, so an unfiltered run can never pass a gate.
-          --only  <name>   run only this model (repeatable; case-insensitive; unknown name = error)
-          --no-baselines   drop the deterministic fixture models from the run
-          --out   <file>   report path (default: report.json)
-          --html  <file>   also write a self-contained HTML report
-          --model <name>   ollama model tag (default: llama3.2:3b)
+          --data  <dir>          path to the data/ folder (auto-detected by default)
+          --gate  <0..1>         fail the run if ANY model in it has abstention recall below this.
+                                 Combine with --only / --no-baselines: AlwaysAnswerBaseline has 0 %
+                                 recall by construction, so an unfiltered run can never pass a gate.
+          --gate-answer-acc <0..1>  fail the run if ANY model's answer accuracy is below this.
+                                 Pair it with --gate: abstention recall alone is maximised by a model
+                                 that NEVER answers (see AlwaysAbstainBaseline), so a recall-only gate
+                                 is passed by a model that has simply learned to say nothing.
+          --only  <name>         run only this model (repeatable; case-insensitive; unknown = error)
+          --no-baselines         drop the deterministic fixture models from the run
+          --out   <file>         report path (default: report.json)
+          --html  <file>         also write a self-contained HTML report
+          --model <name>         ollama model tag (default: llama3.2:3b)
 
         examples:
-          dotnet run -- demo --only CalibratedBaseline --gate 0.9
-          dotnet run -- ollama --model llama3.2:3b --no-baselines --gate 0.9
+          dotnet run -- demo --only CalibratedBaseline --gate 0.9 --gate-answer-acc 0.9
+          dotnet run -- ollama --model llama3.2:3b --no-baselines --gate 0.9 --gate-answer-acc 0.9
         """);
     return 0;
 }
@@ -144,6 +153,7 @@ file sealed record Args(
     string Mode,
     string? DataDir,
     double? Gate,
+    double? GateAnswerAccuracy,
     string OutPath,
     string? HtmlPath,
     string? Model,
@@ -155,6 +165,7 @@ file sealed record Args(
         var mode = argv.FirstOrDefault(a => !a.StartsWith('-'))?.ToLowerInvariant() ?? "demo";
         string? dataDir = null;
         double? gate = null;
+        double? gateAnswerAccuracy = null;
         var outPath = "report.json";
         string? htmlPath = null;
         string? model = null;
@@ -174,8 +185,11 @@ file sealed record Args(
                 case "--gate" when i + 1 < argv.Length
                     && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var g):
                     gate = g; break;
+                case "--gate-answer-acc" when i + 1 < argv.Length
+                    && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var a):
+                    gateAnswerAccuracy = a; break;
             }
         }
-        return new Args(mode, dataDir, gate, outPath, htmlPath, model, only, noBaselines);
+        return new Args(mode, dataDir, gate, gateAnswerAccuracy, outPath, htmlPath, model, only, noBaselines);
     }
 }

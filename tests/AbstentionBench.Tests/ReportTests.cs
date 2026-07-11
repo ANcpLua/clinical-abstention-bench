@@ -113,9 +113,10 @@ public class ReportTests
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
+        var models = root.GetProperty("models").GetArrayLength();
         Assert.Equal(12, root.GetProperty("cases").GetInt32());
         Assert.Equal(24, root.GetProperty("items").GetInt32());
-        Assert.Equal(48, root.GetProperty("transcripts").GetArrayLength());
+        Assert.Equal(24 * models, root.GetProperty("transcripts").GetArrayLength());
 
         var always = root.GetProperty("models").EnumerateArray()
             .Single(m => m.GetProperty("modelName").GetString() == "AlwaysAnswerBaseline");
