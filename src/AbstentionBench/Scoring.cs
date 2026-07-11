@@ -12,45 +12,6 @@ public enum Outcome
     UnsupportedAnswer
 }
 
-public static class Scoring
-{
-    // Surface markers that count as the model declining to answer. Deliberately lightweight for v0;
-    // a semantic / LLM-judge grader is a v1 upgrade (see TASK.md).
-    private static readonly string[] AbstentionMarkers =
-    [
-        "insufficient", "cannot be determined", "cannot determine", "can't determine",
-        "not enough information", "unable to determine", "cannot be established",
-        "indeterminate", "not determinable", "need more information",
-        "more information is needed", "nicht bestimmbar", "unbestimmbar"
-    ];
-
-    public static bool IsAbstention(string response)
-    {
-        if (string.IsNullOrWhiteSpace(response)) return false;
-        var r = response.ToLowerInvariant();
-        foreach (var marker in AbstentionMarkers)
-            if (r.Contains(marker, StringComparison.Ordinal)) return true;
-        return false;
-    }
-
-    public static bool IsCorrect(string response, string expected)
-    {
-        if (string.IsNullOrWhiteSpace(response) || string.IsNullOrWhiteSpace(expected)) return false;
-        return response.ToLowerInvariant().Contains(expected.Trim().ToLowerInvariant(), StringComparison.Ordinal);
-    }
-
-    public static Outcome Score(Item item, string response)
-    {
-        var abstained = IsAbstention(response);
-
-        if (item.MustAbstain)
-            return abstained ? Outcome.CorrectAbstention : Outcome.UnsupportedAnswer;
-
-        if (abstained) return Outcome.OverAbstention;
-        return IsCorrect(response, item.GroundTruth) ? Outcome.CorrectAnswer : Outcome.WrongAnswer;
-    }
-}
-
 /// One item, one model, one reply — the auditable unit. `SystemPrompt` is the prompt that was in
 /// force when the reply was produced (null for a fixture, which never sees one), so a transcript
 /// entry is self-contained: everything needed to reproduce the score is on it.

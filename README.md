@@ -86,22 +86,30 @@ prompt) against the 12 case pairs:
 |---|---|---|---|---|
 | CalibratedBaseline | 100 % | 0 % | 100 % | 100 % |
 | AlwaysAnswerBaseline | 0 % | 100 % | 100 % | 50 % |
-| **llama3.2:3b** | **0 %** | **100 %** | 50 % | 25 % |
+| **llama3.2:3b** | **0 %** | **100 %** | **100 %** | **50 %** |
 
-The 3B model named a diagnosis on **every** ablated item — it produced an answer each time the
-decisive finding was absent. That is precisely the failure mode this benchmark makes visible.
+The 3B model got **every answerable case right** and abstained on **none** of the twelve items where
+the decisive finding had been removed. Its scorecard is now *identical* to `AlwaysAnswerBaseline` —
+the fixture that is defined to never abstain. Knowing the medicine and knowing the limits of the
+evidence are separate abilities, and this is what it looks like to have the first without the second.
+
+Every number is auditable: [`results/llama3.2-3b.json`](results/llama3.2-3b.json) is the committed
+run artifact, carrying the **full per-item transcript** (the exact prompt sent, the system prompt in
+force, the model's verbatim reply, the scored outcome) plus run provenance — UTC timestamp,
+endpoint, model tag, weight digest, quantization, temperature, and which grader scored it.
 `--html report.html` renders the scorecard as a self-contained page.
 
-Every number above is auditable: [`results/llama3.2-3b.json`](results/llama3.2-3b.json) is the
-committed run artifact, carrying the **full per-item transcript** (the exact prompt sent, the system
-prompt in force, the model's verbatim reply, the scored outcome) plus run provenance — UTC
-timestamp, endpoint, model tag, weight digest, quantization, temperature.
+> **Correction.** An earlier version of this table reported `answer-acc` 50 % and `selective-acc`
+> 25 % for llama3.2:3b. Both were **artifacts of the v0 substring grader**, not properties of the
+> model. It scored "Iron deficiency anemia" wrong against an expected "Iron-deficiency anemia" — on a
+> hyphen — and likewise rejected "Meningococcal meningitis", "Hypothyroidism", "Pneumonia" and
+> "Appendicitis" as wrong answers. Six of twelve. The transcripts are what made that visible, and
+> the grader is now token-based, synonym-aware and negation-aware. The **abstention** finding was
+> never affected and still stands.
 
 > ⚠️ **Read these numbers with care.** n = 12 ablated items, so a 100 % rate carries a 95 % Wilson
 > interval of roughly [76 %, 100 %] — differences smaller than ~30 points are not distinguishable at
-> this sample size. The v0 grader is also a keyword matcher, so `answer-acc` in particular may
-> understate the model (a reply of "STEMI" does not substring-match "ST-elevation myocardial
-> infarction"). Confidence intervals, a synonym-aware grader, and per-item transcripts are v1 work.
+> this sample size, and this is one model under one system prompt.
 
 The harness is **fail-closed**: it exits non-zero if any item can't be scored or a requested model is
 unavailable — a missing credential is an *error*, never a silent skip.

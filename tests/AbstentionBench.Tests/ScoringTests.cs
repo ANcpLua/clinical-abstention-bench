@@ -5,50 +5,10 @@ namespace AbstentionBench.Tests;
 
 public class ScoringTests
 {
-    [Theory]
-    [InlineData("INSUFFICIENT - no labs given")]
-    [InlineData("The data is insufficient to determine a diagnosis.")]
-    [InlineData("This cannot be determined from the information provided.")]
-    [InlineData("Unable to determine without imaging.")]
-    [InlineData("Nicht bestimmbar ohne CSF.")]
-    public void IsAbstention_TrueForMarkers(string response)
-        => Assert.True(Scoring.IsAbstention(response));
-
-    [Theory]
-    [InlineData("Diabetic ketoacidosis.")]
-    [InlineData("Bacterial meningitis")]
-    [InlineData("")]
-    public void IsAbstention_FalseForRealAnswersOrEmpty(string response)
-        => Assert.False(Scoring.IsAbstention(response));
-
-    [Fact]
-    public void IsCorrect_MatchesCaseInsensitiveSubstring()
-    {
-        Assert.True(Scoring.IsCorrect("I think this is Diabetic Ketoacidosis.", "diabetic ketoacidosis"));
-        Assert.False(Scoring.IsCorrect("Bacterial meningitis.", "diabetic ketoacidosis"));
-    }
-
-    [Fact]
-    public void Score_AblatedItem_AbstainIsCorrectAbstention_AnswerIsUnsupported()
-    {
-        var ablated = new Item("c01", Variant.Ablated, "…", "INSUFFICIENT", MustAbstain: true);
-        Assert.Equal(Outcome.CorrectAbstention, Scoring.Score(ablated, "INSUFFICIENT, labs missing"));
-        Assert.Equal(Outcome.UnsupportedAnswer, Scoring.Score(ablated, "Diabetic ketoacidosis."));
-    }
-
-    [Fact]
-    public void Score_FullItem_CoversCorrectWrongAndOverAbstention()
-    {
-        var full = new Item("c01", Variant.Full, "…", "Diabetic ketoacidosis", MustAbstain: false);
-        Assert.Equal(Outcome.CorrectAnswer, Scoring.Score(full, "Diabetic ketoacidosis."));
-        Assert.Equal(Outcome.WrongAnswer, Scoring.Score(full, "Gastroenteritis."));
-        Assert.Equal(Outcome.OverAbstention, Scoring.Score(full, "Insufficient information."));
-    }
-
     [Fact]
     public void FromCase_ProducesOneAnswerableAndOneMustAbstain()
     {
-        var c = new BenchCase("c99", "Test", "full?", "ablated?", "Answer", "the fact", "why");
+        var c = new BenchCase("c99", "Test", "full?", "ablated?", "Answer", "the fact", "why", ["Ans"]);
         var items = Item.FromCase(c).ToList();
         Assert.Equal(2, items.Count);
         Assert.Contains(items, i => i is { Variant: Variant.Full, MustAbstain: false });
@@ -56,12 +16,26 @@ public class ScoringTests
         Assert.Equal("c99:ablated", items.Single(i => i.MustAbstain).Key);
     }
 
+    /// The answerable item carries the case's synonyms; the must-abstain item has nothing to accept.
+    [Fact]
+    public void FromCase_AcceptedFormsCoverTheCanonicalAnswerAndItsSynonyms()
+    {
+        var c = new BenchCase("c99", "Test", "full?", "ablated?", "Gout", "the fact", "why", ["podagra"]);
+        var items = Item.FromCase(c).ToList();
+
+        var full = items.Single(i => i.Variant == Variant.Full);
+        Assert.Equal(["Gout", "podagra"], full.AcceptedForms);
+
+        var ablated = items.Single(i => i.Variant == Variant.Ablated);
+        Assert.Equal(["INSUFFICIENT"], ablated.AcceptedForms);
+    }
+
     [Fact]
     public void Scorecard_AggregatesRatesCorrectly()
     {
         var full = new Item("c1", Variant.Full, "", "Flu", false);
         var ablated = new Item("c1", Variant.Ablated, "", "INSUFFICIENT", true);
-        ItemResult R(Item i, string resp) => new("m", i, null, resp, Scoring.Score(i, resp));
+        ItemResult R(Item i, string resp) => new("m", i, null, resp, LexicalGrader.Instance.Score(i, resp));
 
         var card = Scorecard.From("m",
         [

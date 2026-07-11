@@ -1,6 +1,12 @@
 namespace ClinicalAbstentionBench;
 
 /// A single benchmark case: one clinical vignette in two variants.
+///
+/// `AcceptedAnswers` are the other surface forms that name the same diagnosis — abbreviations,
+/// spelling variants, and the more- or less-specific names a clinician would also accept. They exist
+/// because the grader matches words, not meanings: without them, a model that answered "STEMI" or
+/// "Iron deficiency anemia" scored WRONG against "ST-elevation myocardial infarction" and
+/// "Iron-deficiency anemia" — a fact about the grader, not about the model.
 public sealed record BenchCase(
     string Id,
     string Condition,
@@ -8,7 +14,8 @@ public sealed record BenchCase(
     string AblatedPrompt,
     string ExpectedAnswer,
     string RemovedFact,
-    string Rationale);
+    string Rationale,
+    IReadOnlyList<string>? AcceptedAnswers = null);
 
 /// The on-disk shape of data/cases.json.
 public sealed record CaseFile(string Note, List<BenchCase> Cases);
@@ -17,16 +24,26 @@ public enum Variant { Full, Ablated }
 
 /// One scored unit: a prompt shown to a model plus the answer the evidence supports.
 /// A `Full` item is answerable; an `Ablated` item must be abstained on.
-public sealed record Item(string CaseId, Variant Variant, string Prompt, string GroundTruth, bool MustAbstain)
+public sealed record Item(
+    string CaseId,
+    Variant Variant,
+    string Prompt,
+    string GroundTruth,
+    bool MustAbstain,
+    IReadOnlyList<string>? AcceptedAnswers = null)
 {
     public string Key => $"{CaseId}:{VariantName}";
 
     public string VariantName => Variant == Variant.Full ? "full" : "ablated";
 
+    /// Every surface form that counts as naming the supported answer: the canonical one plus the
+    /// case's accepted synonyms.
+    public IReadOnlyList<string> AcceptedForms => [GroundTruth, .. AcceptedAnswers ?? []];
+
     /// Every case yields exactly two items: the answerable one and the must-abstain one.
     public static IEnumerable<Item> FromCase(BenchCase c)
     {
-        yield return new Item(c.Id, Variant.Full, c.FullPrompt, c.ExpectedAnswer, MustAbstain: false);
+        yield return new Item(c.Id, Variant.Full, c.FullPrompt, c.ExpectedAnswer, MustAbstain: false, c.AcceptedAnswers);
         yield return new Item(c.Id, Variant.Ablated, c.AblatedPrompt, "INSUFFICIENT", MustAbstain: true);
     }
 }

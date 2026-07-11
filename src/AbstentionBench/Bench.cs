@@ -79,15 +79,17 @@ public static class Bench
         return selected;
     }
 
-    /// Run every item through one model, in item order.
+    /// Run every item through one model, in item order, scoring each reply with `grader`.
     public static async Task<List<ItemResult>> RunModelAsync(
-        IModel model, IReadOnlyList<Item> items, CancellationToken ct = default)
+        IModel model, IReadOnlyList<Item> items, IGrader? grader = null, CancellationToken ct = default)
     {
+        grader ??= LexicalGrader.Instance;
+
         var results = new List<ItemResult>(items.Count);
         foreach (var item in items)
         {
             var response = await model.AnswerAsync(item, ct);
-            results.Add(new ItemResult(model.Name, item, model.SystemPrompt, response, Scoring.Score(item, response)));
+            results.Add(new ItemResult(model.Name, item, model.SystemPrompt, response, grader.Score(item, response)));
         }
         return results;
     }

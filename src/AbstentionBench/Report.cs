@@ -19,12 +19,16 @@ public static class Report
         IReadOnlyList<IModel> models,
         IReadOnlyDictionary<string, IReadOnlyList<ItemResult>> resultsByModel,
         IReadOnlyList<Scorecard> cards,
-        DateTimeOffset timestamp)
+        DateTimeOffset timestamp,
+        IGrader? grader = null)
     {
+        grader ??= LexicalGrader.Instance;
+
         var provenance = new RunProvenance(
             SchemaVersion,
             timestamp.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"),
             mode,
+            grader.Name,
             [.. models.Select(m => new ModelProvenance(
                 m.Name,
                 m.SystemPrompt,
@@ -80,6 +84,8 @@ public sealed record RunProvenance(
     string SchemaVersion,
     string TimestampUtc,
     string Mode,
+    /// Which grader turned replies into outcomes. A score is only meaningful next to this.
+    string Grader,
     IReadOnlyList<ModelProvenance> Models);
 
 public sealed record ModelProvenance(

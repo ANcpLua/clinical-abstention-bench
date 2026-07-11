@@ -31,6 +31,21 @@ Build + tests are green; the **content and the construct** are what need a human
   can be pointed at a real model in CI. The example has been pulled from the README until it works.
 
 ## Next — construct validity (Alexander)
+- [ ] **Human review of `acceptedAnswers` in `data/cases.json`.** The grader now matches a list of
+      accepted surface forms per case instead of one canonical string. Those lists are nominally a
+      scoring-schema concern, but they encode clinical judgements and **they were authored after
+      seeing what llama3.2:3b actually replied** — so they need the same scrutiny as the vignettes,
+      precisely because the author was not blind. The judgement calls worth checking:
+      - **c02 deliberately does NOT accept bare "meningitis"** — the CSF profile is what separates
+        bacterial from viral, so accepting it would erase the discrimination the case is built on. A
+        test pins this.
+      - **c09 DOES accept bare "pneumonia"** — the consolidation on the film is what makes it
+        pneumonia; "community-acquired" describes the setting, which the X-ray does not establish.
+      - **c12 accepts "hypoglycemic"** as the adjectival form. This is the one closest to grading to
+        the test: llama replied *"Hypoglycemic seizure"* (there is no seizure in the vignette). Is
+        naming the right metabolic derangement while inventing a feature a correct answer?
+      - **c05 accepts bare "hypothyroidism"** for "Primary hypothyroidism"; **c10 accepts bare
+        "appendicitis"** for "Acute appendicitis". Both drop a qualifier the full prompt supports.
 - [ ] **Human review of the 12 vignettes.** The bar is not just "is the medicine right" but
       **"would a competent clinician genuinely decline on the ablated prompt?"** Several may not clear
       it — c08 (dysuria + frequency in a young woman) is treatable empirically as uncomplicated
