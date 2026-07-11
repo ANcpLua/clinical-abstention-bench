@@ -12,23 +12,44 @@ doesn't know?") is under-benchmarked. A confident wrong diagnosis is worse than 
 tell." Patient-safety-relevant, biomedical-center, and it reuses assets already built
 (`ancplua.evaluation.template`, `dicom-fhir-viewer`, the info-theory research framing).
 
-## Status: v0 complete & verified — OPEN FOR HUMAN REVIEW (do not auto-merge)
-Build + tests are green; the **content and the construct** are what need a human check.
+## Status: v1 complete & verified — OPEN FOR HUMAN REVIEW (do not auto-merge)
+Build + tests are green (116 tests). The **content and the construct** are what need a human check,
+and there is now materially more content to check than there was at v0 — see the two ⚠️ blocks below.
+
+**The v0 headline did not survive v1.** Two of its three components turned out to be artifacts:
+
+| v0 claim | what it actually was |
+|---|---|
+| llama3.2:3b answer-accuracy **50 %** | a **substring-grader artifact**. 6 of 12 "wrong" answers were correct — one lost on a *hyphen* ("Iron deficiency anemia" vs "Iron-deficiency anemia"). Real value: **100 %**. |
+| llama3.2:3b **"bluffs on 100 % of ablated items"** | a **prompt artifact**. True under the default prompt; under `abstention-encouraged` the same model at temperature 0 abstains on **9 of 12**. It was never unable to decline — it was not asked to. |
+| llama3.2:3b ≠ AlwaysAnswerBaseline | **false at v0** — after the grader fix their scorecards were *identical*. Only the new counterfactual arm separates them (75 % vs 0 % evidence-sensitivity). |
+
+What survives: on the default prompt, the model does answer every ablated item, and it *does* recite
+a diagnosis the evidence excludes on 3 of 12 counterfactual items. Both now have committed
+transcripts behind them.
 
 ## Progress
-- [x] Dataset v0 — 12 textbook full/ablated case-pairs (`data/cases.json`)
+- [x] Dataset — 12 textbook vignettes × 3 variants (full / ablated / **counterfactual**) = 36 items
 - [x] Harness — load, run, score, fail-closed gate
-- [x] Metrics — abstention-recall, unsupported-answer rate, answer-accuracy, over-abstention, selective-accuracy
-- [x] Deterministic offline baselines (AlwaysAnswerBaseline vs CalibratedBaseline) — no credentials
-- [x] 15 unit + integration tests, green (`dotnet test`)
-- [x] CI (public repo, GitHub-hosted, free) — build (warnings-as-errors), test, demo run
+- [x] Metrics — abstention-recall, unsupported-answer rate, answer-accuracy, over-abstention,
+      selective-accuracy, **evidence-sensitivity**, all with **95 % Wilson intervals**
+- [x] Three deterministic offline baselines (AlwaysAnswer / **AlwaysAbstain** / Calibrated) — no credentials
+- [x] **Grader behind `IGrader`** — token-based, synonym-aware, negation- and hedge-aware
+- [x] **Per-item transcripts + run provenance** — every score auditable, committed under `results/`
+- [x] **System prompt as a controlled variable** (`data/prompts.json`, `--prompt <name>|all`)
+- [x] **`--gate` works** — `--only` / `--no-baselines` model selection, plus `--gate-answer-acc`
+- [x] 116 unit + integration tests, green (`dotnet test`)
+- [x] CI — build (warnings-as-errors), test, demo run, and the gate exercised in all three directions
 - [x] Terminology migrated to standard selective-prediction vocabulary (no adversarial/anthropomorphic naming)
 
 ## Known defects
-- **`--gate` is unusable as documented.** `RunDemoAsync` always loads the baseline models and the gate
-  checks *every* model in the run; `AlwaysAnswerBaseline` has 0 % abstention-recall by construction, so
-  `demo --gate 0.9` always exits 1. Needs `--only <name>` / `--no-baselines` model selection so the gate
-  can be pointed at a real model in CI. The example has been pulled from the README until it works.
+- None open. The v0 `--gate` defect is fixed (model selection added; CI exercises pass, fail-on-recall,
+  and fail-on-accuracy). Two *limitations* are documented rather than fixed, deliberately:
+  - **The grader is lexical, not semantic.** It matches word sequences. It does not know that
+    "meningococcal meningitis" is a bacterial meningitis unless `acceptedAnswers` says so. The
+    `IGrader` seam exists so an LLM judge can replace it; building that judge is v2.
+  - **n = 12.** Every interval is wide. Nothing in this repo distinguishes two models whose intervals
+    overlap, and most of them overlap.
 
 ## Next — construct validity (Alexander)
 
@@ -96,20 +117,25 @@ under-determined"* — checkable, rather than authored. The ones worth your eye:
       three ablated prompts are not as under-determined as the others. Worth weighing when you review
       the vignettes.
 
-## v1 backlog
-- [ ] Per-item transcripts + run provenance in the report (today's report.json is aggregates only, so
-      the llama3.2:3b claim is unauditable and has no committed evidence behind it)
-- [ ] Wilson confidence intervals on every rate (n = 12; 100 % carries a 95 % CI of ~[76 %, 100 %])
-- [ ] `AlwaysAbstainBaseline` — abstention-recall is trivially maximised by always abstaining; the
-      metric *does* punish this (50 % selective accuracy) but nothing in the repo demonstrates it
-- [ ] **Counterfactual arm** — flip the decisive finding to point at a different diagnosis. Today a
-      model that ignores the labs entirely and a model that reads them but is overconfident produce
-      *identical* scorecards. This separates them, and it is the strongest scientific addition available.
-- [ ] Synonym-aware + negation-aware grader (today "STEMI" scores wrong, "not DKA" scores right), then
-      an LLM-judge grader behind an `IGrader` seam
-- [ ] System prompt as a controlled variable (`data/prompts.json`, `--prompt <name>`) — abstention is
-      prompt-sensitive, so the current llama result is a claim about one prompt, not about the model
+## v1 backlog — done
+- [x] Per-item transcripts + run provenance (`results/llama3.2-3b.json`, `results/llama3.2-3b-prompt-sweep.json`)
+- [x] Wilson confidence intervals on every rate, on all three report surfaces
+- [x] `AlwaysAbstainBaseline` — and it exposed a hole in `--gate`, now closed by `--gate-answer-acc`
+- [x] **Counterfactual arm** — and it delivered: llama3.2:3b is *not* the gestalt-matcher its
+      scorecard implied (75 % evidence-sensitivity vs AlwaysAnswerBaseline's 0 %)
+- [x] Synonym- and negation-aware grader behind an `IGrader` seam
+- [x] System prompt as a controlled variable — and it turned out to be most of the headline
+
+## v2 backlog
+- [ ] **LLM-judge grader** behind the existing `IGrader` seam. The lexical grader has already produced
+      two false verdicts that had to be caught by hand (a hyphen; an appositive blocking a negation
+      scan). Both are fixed and pinned by tests — but the next one will not announce itself either.
+- [ ] **Larger dataset.** n = 12 is the binding constraint on every claim here. Nothing else on this
+      list buys as much as more cases.
 - [ ] Live LLM adapter (Anthropic/OpenAI via `Microsoft.Extensions.AI`) — `llm` mode is stubbed, fails closed
+- [ ] Risk–coverage curve / AURC, once n supports it
+- [ ] Sweep temperature as a second controlled variable (today everything is temperature 0)
+- [ ] `dotnet new` template packaging, so others can run their own model through the benchmark
 - [ ] Larger sourced dataset; `dotnet new` template packaging
 - [ ] Grounding research (novelty positioning vs existing abstention/selective-prediction work, dataset
       licensing, metric citations) — folds into the exposé

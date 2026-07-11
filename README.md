@@ -258,16 +258,32 @@ eval engine        →   "exit 0 only with positive green evidence, else fail"  
 this benchmark     →   "answer only when the data supports it, else 'INSUFFICIENT'"
 ```
 
-## Roadmap (v1)
+## What this benchmark cannot claim
 
+Stated plainly, because the failures above were all found by taking this seriously:
+
+- **n = 12.** This is the binding constraint on everything. Every interval is wide; two models whose
+  intervals overlap are not distinguishable here, and most of them overlap. Treat a 20-point gap as a
+  hypothesis, not a result.
+- **The grader is lexical, not semantic.** It matches word sequences. It does not *understand* that
+  "meningococcal meningitis" is a bacterial meningitis — it knows only because `acceptedAnswers` says
+  so. It has already produced two false verdicts that had to be caught by hand and fixed (a hyphen; an
+  appositive blocking a negation scan). The next one will not announce itself either. `IGrader` exists
+  so an LLM judge can replace it.
+- **The vignettes are synthetic and unreviewed.** Textbook cases written for this repo, not sourced
+  from a curated set. The counterfactual findings and the synonym lists encode clinical judgements
+  that are **pending human review** (`TASK.md`).
+- **One model, one temperature.** Everything here is `llama3.2:3b` at temperature 0. The prompt is
+  now a controlled variable; the temperature is not.
+
+## Roadmap (v2)
+
+- An **LLM-judge grader** behind the existing `IGrader` seam, to replace the lexical one.
+- A **larger dataset** — nothing else on this list buys as much.
 - Live model adapter — Anthropic / OpenAI via `Microsoft.Extensions.AI` (`llm` mode is stubbed and
   fails closed today).
-- Per-item transcripts in the report, so every score is auditable.
-- Wilson confidence intervals on every rate.
-- A **counterfactual** arm — flip the decisive finding to point elsewhere, to separate *reads the
-  evidence but is overconfident* from *ignored the evidence entirely*.
-- Synonym-aware grading, then an LLM-judge grader to replace the v0 keyword matcher.
-- Larger, sourced dataset; system prompt as a controlled variable.
+- Risk–coverage curves / AURC, once n supports them.
+- Temperature as a second controlled variable.
 - Package as a `dotnet new` template so anyone can run *their* model through the benchmark.
 
 ## License
