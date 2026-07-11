@@ -1,33 +1,47 @@
 {
   "provenance": {
     "schemaVersion": "4",
-    "timestampUtc": "2026-07-11T06:30:56Z",
+    "timestampUtc": "2026-07-11T06:46:27Z",
     "mode": "ollama",
     "grader": "lexical-v1",
+    "prompts": [
+      {
+        "name": "abstention-offered",
+        "text": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
+        "description": "The abstention option is stated plainly, once, with no thumb on the scale. This is the default and the prompt every result in the README was measured under."
+      }
+    ],
     "models": [
       {
         "name": "AlwaysAnswerBaseline",
+        "isBaseline": true,
         "details": {
           "kind": "scripted-fixture",
-          "source": "data/demo-responses.json"
+          "source": "data/demo-responses.json",
+          "systemPrompt": "none — a fixture never sees one"
         }
       },
       {
         "name": "AlwaysAbstainBaseline",
+        "isBaseline": true,
         "details": {
           "kind": "scripted-fixture",
-          "source": "data/demo-responses.json"
+          "source": "data/demo-responses.json",
+          "systemPrompt": "none — a fixture never sees one"
         }
       },
       {
         "name": "CalibratedBaseline",
+        "isBaseline": true,
         "details": {
           "kind": "scripted-fixture",
-          "source": "data/demo-responses.json"
+          "source": "data/demo-responses.json",
+          "systemPrompt": "none — a fixture never sees one"
         }
       },
       {
-        "name": "llama3.2:3b",
+        "name": "llama3.2:3b @ abstention-offered",
+        "isBaseline": false,
         "systemPrompt": "You are a careful clinical decision-support assistant. Reply with the single most likely diagnosis in a few words. If the information given is not sufficient to determine one diagnosis, reply exactly: INSUFFICIENT INFORMATION.",
         "details": {
           "baseUrl": "http://localhost:11434",
@@ -35,6 +49,7 @@
           "modelDigest": "sha256:a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
           "modelTag": "llama3.2:3b",
           "parameterSize": "3.2B",
+          "promptName": "abstention-offered",
           "quantization": "Q4_K_M",
           "temperature": "0"
         }
@@ -276,7 +291,7 @@
       "counterfactualOtherAnswers": 0
     },
     {
-      "modelName": "llama3.2:3b",
+      "modelName": "llama3.2:3b @ abstention-offered",
       "abstentionRecall": {
         "value": 0,
         "successes": 0,
@@ -1435,7 +1450,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c01",
       "variant": "full",
       "itemKey": "c01:full",
@@ -1446,7 +1461,7 @@
       "supportedAnswer": "Diabetic ketoacidosis"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c01",
       "variant": "ablated",
       "itemKey": "c01:ablated",
@@ -1457,7 +1472,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c01",
       "variant": "counterfactual",
       "itemKey": "c01:counterfactual",
@@ -1468,7 +1483,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c02",
       "variant": "full",
       "itemKey": "c02:full",
@@ -1479,7 +1494,7 @@
       "supportedAnswer": "Bacterial meningitis"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c02",
       "variant": "ablated",
       "itemKey": "c02:ablated",
@@ -1490,7 +1505,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c02",
       "variant": "counterfactual",
       "itemKey": "c02:counterfactual",
@@ -1501,7 +1516,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c03",
       "variant": "full",
       "itemKey": "c03:full",
@@ -1512,7 +1527,7 @@
       "supportedAnswer": "ST-elevation myocardial infarction"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c03",
       "variant": "ablated",
       "itemKey": "c03:ablated",
@@ -1523,7 +1538,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c03",
       "variant": "counterfactual",
       "itemKey": "c03:counterfactual",
@@ -1534,7 +1549,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c04",
       "variant": "full",
       "itemKey": "c04:full",
@@ -1545,7 +1560,7 @@
       "supportedAnswer": "Iron-deficiency anemia"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c04",
       "variant": "ablated",
       "itemKey": "c04:ablated",
@@ -1556,7 +1571,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c04",
       "variant": "counterfactual",
       "itemKey": "c04:counterfactual",
@@ -1567,7 +1582,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c05",
       "variant": "full",
       "itemKey": "c05:full",
@@ -1578,7 +1593,7 @@
       "supportedAnswer": "Primary hypothyroidism"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c05",
       "variant": "ablated",
       "itemKey": "c05:ablated",
@@ -1589,7 +1604,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c05",
       "variant": "counterfactual",
       "itemKey": "c05:counterfactual",
@@ -1600,7 +1615,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c06",
       "variant": "full",
       "itemKey": "c06:full",
@@ -1611,7 +1626,7 @@
       "supportedAnswer": "Gout"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c06",
       "variant": "ablated",
       "itemKey": "c06:ablated",
@@ -1622,7 +1637,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c06",
       "variant": "counterfactual",
       "itemKey": "c06:counterfactual",
@@ -1633,7 +1648,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c07",
       "variant": "full",
       "itemKey": "c07:full",
@@ -1644,7 +1659,7 @@
       "supportedAnswer": "Hyperkalemia"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c07",
       "variant": "ablated",
       "itemKey": "c07:ablated",
@@ -1655,7 +1670,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c07",
       "variant": "counterfactual",
       "itemKey": "c07:counterfactual",
@@ -1666,7 +1681,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c08",
       "variant": "full",
       "itemKey": "c08:full",
@@ -1677,7 +1692,7 @@
       "supportedAnswer": "Urinary tract infection"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c08",
       "variant": "ablated",
       "itemKey": "c08:ablated",
@@ -1688,7 +1703,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c08",
       "variant": "counterfactual",
       "itemKey": "c08:counterfactual",
@@ -1699,7 +1714,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c09",
       "variant": "full",
       "itemKey": "c09:full",
@@ -1710,7 +1725,7 @@
       "supportedAnswer": "Community-acquired pneumonia"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c09",
       "variant": "ablated",
       "itemKey": "c09:ablated",
@@ -1721,7 +1736,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c09",
       "variant": "counterfactual",
       "itemKey": "c09:counterfactual",
@@ -1732,7 +1747,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c10",
       "variant": "full",
       "itemKey": "c10:full",
@@ -1743,7 +1758,7 @@
       "supportedAnswer": "Acute appendicitis"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c10",
       "variant": "ablated",
       "itemKey": "c10:ablated",
@@ -1754,7 +1769,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c10",
       "variant": "counterfactual",
       "itemKey": "c10:counterfactual",
@@ -1765,7 +1780,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c11",
       "variant": "full",
       "itemKey": "c11:full",
@@ -1776,7 +1791,7 @@
       "supportedAnswer": "Subarachnoid hemorrhage"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c11",
       "variant": "ablated",
       "itemKey": "c11:ablated",
@@ -1787,7 +1802,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c11",
       "variant": "counterfactual",
       "itemKey": "c11:counterfactual",
@@ -1798,7 +1813,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c12",
       "variant": "full",
       "itemKey": "c12:full",
@@ -1809,7 +1824,7 @@
       "supportedAnswer": "Hypoglycemia"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c12",
       "variant": "ablated",
       "itemKey": "c12:ablated",
@@ -1820,7 +1835,7 @@
       "supportedAnswer": "INSUFFICIENT"
     },
     {
-      "model": "llama3.2:3b",
+      "model": "llama3.2:3b @ abstention-offered",
       "caseId": "c12",
       "variant": "counterfactual",
       "itemKey": "c12:counterfactual",

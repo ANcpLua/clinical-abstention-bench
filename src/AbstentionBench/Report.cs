@@ -24,7 +24,8 @@ public static class Report
         IReadOnlyDictionary<string, IReadOnlyList<ItemResult>> resultsByModel,
         IReadOnlyList<Scorecard> cards,
         DateTimeOffset timestamp,
-        IGrader? grader = null)
+        IGrader? grader = null,
+        IReadOnlyList<SystemPrompt>? prompts = null)
     {
         grader ??= LexicalGrader.Instance;
 
@@ -33,8 +34,10 @@ public static class Report
             timestamp.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"),
             mode,
             grader.Name,
+            prompts ?? [],
             [.. models.Select(m => new ModelProvenance(
                 m.Name,
+                m.IsBaseline,
                 m.SystemPrompt,
                 new SortedDictionary<string, string>(m.Provenance.ToDictionary(kv => kv.Key, kv => kv.Value))))]);
 
@@ -90,10 +93,14 @@ public sealed record RunProvenance(
     string Mode,
     /// Which grader turned replies into outcomes. A score is only meaningful next to this.
     string Grader,
+    /// The system prompts in force, verbatim. Abstention is prompt-sensitive, so a rate is a claim
+    /// about a prompt-and-model pair — the prompt has to travel with the number or the number lies.
+    IReadOnlyList<SystemPrompt> Prompts,
     IReadOnlyList<ModelProvenance> Models);
 
 public sealed record ModelProvenance(
     string Name,
+    bool IsBaseline,
     string? SystemPrompt,
     IReadOnlyDictionary<string, string> Details);
 

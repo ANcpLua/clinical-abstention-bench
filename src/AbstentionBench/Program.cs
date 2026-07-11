@@ -18,8 +18,8 @@ try
 {
     return opts.Mode switch
     {
-        "demo" => await RunBenchAsync(opts),
-        "ollama" => await RunBenchAsync(opts, new OllamaModel(opts.Model ?? "llama3.2:3b")),
+        "demo" => await RunBenchAsync(opts, live: false),
+        "ollama" => await RunBenchAsync(opts, live: true),
         "llm" => RunLlm(opts),
         _ => Usage()
     };
@@ -30,22 +30,28 @@ catch (Exception ex)
     return 1; // fail closed
 }
 
-async Task<int> RunBenchAsync(Args o, IModel? liveModel = null)
+async Task<int> RunBenchAsync(Args o, bool live)
 {
     var dataDir = Bench.FindDataDir(o.DataDir);
     var cases = Bench.LoadCases(dataDir);
     var items = Bench.ItemsFor(cases);
+    var prompts = Bench.SelectPrompts(Bench.LoadPrompts(dataDir), o.Prompts);
 
     var available = new List<IModel>();
     if (!o.NoBaselines) available.AddRange(Bench.LoadDemoModels(dataDir));
-    if (liveModel is not null) available.Add(liveModel);
+
+    // One run per (model, prompt): the system prompt is a controlled variable, so sweeping it is how
+    // you find out how much of an unsupported-answer rate belongs to the prompt and not to the model.
+    if (live)
+        available.AddRange(prompts.Select(p => new OllamaModel(o.Model ?? "llama3.2:3b", p)));
 
     var models = Bench.SelectModels(available, o.Only);
     if (models.Count == 0)
         throw new InvalidOperationException(
             "No models selected. --no-baselines removed every model from a 'demo' run — use 'ollama' to add a live model, or drop the flag.");
 
-    Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} models\n");
+    var promptNote = live && prompts.Count > 1 ? $" · {prompts.Count} system prompts" : "";
+    Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} models{promptNote}\n");
 
     var cards = new List<Scorecard>();
     var resultsByModel = new Dictionary<string, IReadOnlyList<ItemResult>>();
@@ -56,15 +62,16 @@ async Task<int> RunBenchAsync(Args o, IModel? liveModel = null)
         cards.Add(Scorecard.From(model.Name, results));
     }
 
-    PrintTable(cards);
+    PrintTable(cards, models);
 
-    var report = Report.Build(o.Mode, cases.Count, items.Count, models, resultsByModel, cards, DateTimeOffset.UtcNow);
+    var report = Report.Build(o.Mode, cases.Count, items.Count, models, resultsByModel, cards, DateTimeOffset.UtcNow, prompts: prompts);
     Report.Write(o.OutPath, report);
     Console.WriteLine($"report → {o.OutPath}  ({report.Transcripts.Count} per-item transcripts)");
 
     if (o.HtmlPath is { } htmlPath)
     {
-        File.WriteAllText(htmlPath, ScorecardPage.Render(cases.Count, items.Count, cards, cases[0]));
+        var baselines = models.Where(m => m.IsBaseline).Select(m => m.Name).ToHashSet();
+        File.WriteAllText(htmlPath, ScorecardPage.Render(cases.Count, items.Count, cards, cases[0], baselines));
         Console.WriteLine($"html report → {htmlPath}");
     }
 
@@ -103,12 +110,29 @@ int RunLlm(Args o)
     return 1;
 }
 
-static void PrintTable(IReadOnlyList<Scorecard> cards)
+static void PrintTable(IReadOnlyList<Scorecard> cards, IReadOnlyList<IModel> models)
 {
-    Console.WriteLine($"{"model",-22} {"abstain-recall",14} {"unsupported",14} {"answer-acc",14} {"over-abstain",14} {"selective-acc",14}");
-    Console.WriteLine(new string('─', 97));
-    foreach (var c in cards)
-        Console.WriteLine($"{c.ModelName,-22} {c.AbstentionRecall,14} {c.UnsupportedAnswerRate,14} {c.AnswerAccuracy,14} {c.OverAbstentionRate,14} {c.SelectiveAccuracy,14}");
+    var isBaseline = models.ToDictionary(m => m.Name, m => m.IsBaseline);
+    var width = Math.Max(22, cards.Max(c => c.ModelName.Length) + 1);
+
+    // Baselines are separated from live models by a rule, because they are not competitors: a fixture
+    // is keyed on item id and never sees a system prompt at all.
+    void Rows(Func<Scorecard, string> row)
+    {
+        foreach (var group in new[] { false, true })
+        {
+            var inGroup = cards.Where(c => isBaseline.GetValueOrDefault(c.ModelName) == group).ToList();
+            if (inGroup.Count == 0) continue;
+            if (group && cards.Any(c => !isBaseline.GetValueOrDefault(c.ModelName)))
+                Console.WriteLine($"{"— baselines (no system prompt) —",-30}");
+            foreach (var c in inGroup) Console.WriteLine(row(c));
+        }
+    }
+
+    Console.WriteLine($"{"model",-0}".PadRight(width) + $"{"abstain-recall",14} {"unsupported",14} {"answer-acc",14} {"over-abstain",14} {"selective-acc",14}");
+    Console.WriteLine(new string('─', width + 75));
+    Rows(c => c.ModelName.PadRight(width) + $"{c.AbstentionRecall,14} {c.UnsupportedAnswerRate,14} {c.AnswerAccuracy,14} {c.OverAbstentionRate,14} {c.SelectiveAccuracy,14}");
+
     Console.WriteLine();
     Console.WriteLine("abstain-recall: of the must-abstain (ablated) items, how many the model correctly declined.");
     Console.WriteLine("unsupported:    of the must-abstain items, how many it answered anyway — the failure mode this benchmark targets.");
@@ -119,10 +143,10 @@ static void PrintTable(IReadOnlyList<Scorecard> cards)
 
     Console.WriteLine();
     Console.WriteLine("COUNTERFACTUAL PROBE — the decisive finding is flipped so it EXCLUDES the original diagnosis.");
-    Console.WriteLine($"{"model",-22} {"evidence-sens",14} {"said-excluded",14} {"abstained",14}");
-    Console.WriteLine(new string('─', 67));
-    foreach (var c in cards)
-        Console.WriteLine($"{c.ModelName,-22} {c.EvidenceSensitivity,14} {c.EvidenceInsensitivityRate,14} {new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal),14}");
+    Console.WriteLine($"{"model",-0}".PadRight(width) + $"{"evidence-sens",14} {"said-excluded",14} {"abstained",14}");
+    Console.WriteLine(new string('─', width + 45));
+    Rows(c => c.ModelName.PadRight(width) + $"{c.EvidenceSensitivity,14} {c.EvidenceInsensitivityRate,14} {new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal),14}");
+
     Console.WriteLine();
     Console.WriteLine("said-excluded:  it named the diagnosis the flipped finding rules out — so it cannot have read the finding.");
     Console.WriteLine("This is a probe, not part of selective-accuracy: it is trivially maxed by a model that answers nothing.");
@@ -148,6 +172,10 @@ static int Usage()
                                  that NEVER answers (see AlwaysAbstainBaseline), so a recall-only gate
                                  is passed by a model that has simply learned to say nothing.
           --only  <name>         run only this model (repeatable; case-insensitive; unknown = error)
+          --prompt <name|all>    system prompt from data/prompts.json (repeatable; 'all' sweeps every
+                                 one). Abstention is prompt-sensitive, so a rate measured under one
+                                 prompt is a claim about that PROMPT-AND-MODEL PAIR, not the model.
+                                 The baselines never see a system prompt and are unaffected.
           --no-baselines         drop the deterministic fixture models from the run
           --out   <file>         report path (default: report.json)
           --html  <file>         also write a self-contained HTML report
@@ -156,6 +184,7 @@ static int Usage()
         examples:
           dotnet run -- demo --only CalibratedBaseline --gate 0.9 --gate-answer-acc 0.9
           dotnet run -- ollama --model llama3.2:3b --no-baselines --gate 0.9 --gate-answer-acc 0.9
+          dotnet run -- ollama --prompt all --no-baselines   # how much of the rate is the prompt?
         """);
     return 0;
 }
@@ -170,7 +199,8 @@ file sealed record Args(
     string? HtmlPath,
     string? Model,
     IReadOnlyList<string> Only,
-    bool NoBaselines)
+    bool NoBaselines,
+    IReadOnlyList<string> Prompts)
 {
     public static Args Parse(string[] argv)
     {
@@ -182,6 +212,7 @@ file sealed record Args(
         string? htmlPath = null;
         string? model = null;
         var only = new List<string>();
+        var prompts = new List<string>();
         var noBaselines = false;
 
         for (var i = 0; i < argv.Length; i++)
@@ -193,6 +224,7 @@ file sealed record Args(
                 case "--html" when i + 1 < argv.Length: htmlPath = argv[++i]; break;
                 case "--model" when i + 1 < argv.Length: model = argv[++i]; break;
                 case "--only" when i + 1 < argv.Length: only.Add(argv[++i]); break;
+                case "--prompt" when i + 1 < argv.Length: prompts.Add(argv[++i]); break;
                 case "--no-baselines": noBaselines = true; break;
                 case "--gate" when i + 1 < argv.Length
                     && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var g):
@@ -202,6 +234,6 @@ file sealed record Args(
                     gateAnswerAccuracy = a; break;
             }
         }
-        return new Args(mode, dataDir, gate, gateAnswerAccuracy, outPath, htmlPath, model, only, noBaselines);
+        return new Args(mode, dataDir, gate, gateAnswerAccuracy, outPath, htmlPath, model, only, noBaselines, prompts);
     }
 }

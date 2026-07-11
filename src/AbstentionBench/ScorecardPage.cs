@@ -9,14 +9,21 @@ namespace ClinicalAbstentionBench;
 /// Deliberately dependency-free: inline CSS, no scripts, no CDN.
 public static class ScorecardPage
 {
-    public static string Render(int caseCount, int itemCount, IReadOnlyList<Scorecard> cards, BenchCase example)
+    public static string Render(
+        int caseCount,
+        int itemCount,
+        IReadOnlyList<Scorecard> cards,
+        BenchCase example,
+        IReadOnlySet<string>? baselineNames = null)
     {
+        baselineNames ??= new HashSet<string>();
+
         var rows = new StringBuilder();
         foreach (var c in cards.OrderByDescending(c => c.SelectiveAccuracy.Value))
         {
             rows.AppendLine($"""
-                <tr>
-                  <td class="model">{E(c.ModelName)}</td>
+                <tr class="{RowClass(c, baselineNames)}">
+                  <td class="model">{E(c.ModelName)}{BaselineTag(c, baselineNames)}</td>
                   <td>{Cell(c.AbstentionRecall)}</td>
                   <td class="unsupported">{Cell(c.UnsupportedAnswerRate)}</td>
                   <td>{Cell(c.AnswerAccuracy)}</td>
@@ -26,7 +33,7 @@ public static class ScorecardPage
                 """);
         }
 
-        var probe = Probe(cards);
+        var probe = Probe(cards, baselineNames);
 
         return $$"""
             <!doctype html>
@@ -51,6 +58,9 @@ public static class ScorecardPage
               .note { color:#9aa7b4; font-size:13px; }
               .ci { display:block; color:#7d8894; font-size:11px; font-weight:400; margin-top:2px; }
               td.unsupported .ci, td.selective .ci { color:#7d8894; }
+              tr.baseline td { opacity:.62; }
+              tr.live td.model { border-left:3px solid #4c8dff; padding-left:11px; }
+              .tagline { display:block; color:#7d8894; font-size:11px; font-weight:400; margin-top:2px; }
               .triple { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:10px; }
               .card { background:#111823; border:1px solid #1c2530; border-radius:10px; padding:16px 18px; font-size:14px; }
               .card h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
@@ -76,7 +86,8 @@ public static class ScorecardPage
               </table>
               <p class="note">unsupported — of the items where the decisive finding was removed, the fraction the model answered anyway. This is the failure mode the benchmark targets.</p>
               <p class="note">Brackets are the <strong>95 % Wilson score interval</strong>. With {{caseCount}} cases they are wide: where two models' intervals overlap, this benchmark cannot tell them apart, however far apart the headline percentages look.</p>
-              <p class="note">Baseline rows are deterministic fixtures keyed on item id; they never see a system prompt, so they are not directly comparable to a live model.</p>
+              <p class="note">Dimmed rows are deterministic <strong>fixtures</strong>, keyed on item id. They never see a system prompt, so they are reference points, not competitors — do not read them as a leaderboard against the live model.</p>
+              <p class="note">A live model's row is named <code>model @ prompt</code>. Abstention is <strong>prompt-sensitive</strong>: a rate measured under one system prompt is a claim about that prompt-and-model pair, not about the model. Sweep them with <code>--prompt all</code>.</p>
             {{probe}}
               <h2>How a case works — {{E(example.Condition)}}</h2>
               <div class="triple">
@@ -92,7 +103,7 @@ public static class ScorecardPage
     /// The counterfactual arm gets its own table, deliberately. It is a probe — "did the model read
     /// the decisive finding?" — and not part of selective accuracy, because like abstention-recall it
     /// is trivially maximised by a model that answers nothing.
-    private static string Probe(IReadOnlyList<Scorecard> cards)
+    private static string Probe(IReadOnlyList<Scorecard> cards, IReadOnlySet<string> baselineNames)
     {
         if (cards.All(c => c.CounterfactualTotal == 0)) return "";
 
@@ -100,8 +111,8 @@ public static class ScorecardPage
         foreach (var c in cards.OrderByDescending(c => c.EvidenceSensitivity.Value))
         {
             rows.AppendLine($"""
-                <tr>
-                  <td class="model">{E(c.ModelName)}</td>
+                <tr class="{RowClass(c, baselineNames)}">
+                  <td class="model">{E(c.ModelName)}{BaselineTag(c, baselineNames)}</td>
                   <td class="selective">{Cell(c.EvidenceSensitivity)}</td>
                   <td class="unsupported">{Cell(c.EvidenceInsensitivityRate)}</td>
                   <td>{Cell(new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal))}</td>
@@ -126,6 +137,15 @@ public static class ScorecardPage
               <p class="note">Not folded into selective-accuracy: like abstention-recall, this is trivially maximised by a model that answers nothing.</p>
             """;
     }
+
+    /// Baseline rows are dimmed and tagged. They are deterministic fixtures keyed on item id that
+    /// never see a system prompt — reference points, not competitors, and the page should not invite
+    /// a reader to rank a live model against them as though the comparison were like-for-like.
+    private static string RowClass(Scorecard c, IReadOnlySet<string> baselineNames)
+        => baselineNames.Contains(c.ModelName) ? "baseline" : "live";
+
+    private static string BaselineTag(Scorecard c, IReadOnlySet<string> baselineNames)
+        => baselineNames.Contains(c.ModelName) ? """<span class="tagline">fixture · no system prompt</span>""" : "";
 
     /// A rate is never shown without its interval. At n = 12 the point estimate on its own is the
     /// most misleading thing this page could print.

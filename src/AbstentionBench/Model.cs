@@ -78,6 +78,17 @@ public sealed record Item(
     }
 }
 
+/// One named system prompt, loaded from data/prompts.json.
+///
+/// The system prompt is a **controlled variable**, not a constant. Abstention is strongly
+/// prompt-sensitive: an unsupported-answer rate measured under one instruction is a claim about that
+/// prompt-and-model pair, and saying "llama3.2:3b answers when it shouldn't" without naming the
+/// prompt is saying less than it appears to.
+public sealed record SystemPrompt(string Name, string Text, string Description);
+
+/// The on-disk shape of data/prompts.json.
+public sealed record PromptFile(string Default, List<SystemPrompt> Prompts);
+
 /// A model under test. A real LLM only needs `item.Prompt`; the interface passes the
 /// whole item so deterministic fixtures can key off `item.Key`.
 public interface IModel
@@ -91,6 +102,10 @@ public interface IModel
     /// Recorded per item in the report so a transcript is self-contained.
     string? SystemPrompt => null;
 
+    /// True for a deterministic fixture. Reported separately from live models, because a fixture is
+    /// keyed on item id and never sees a system prompt — it is a reference point, not a competitor.
+    bool IsBaseline => false;
+
     /// What was actually run, recorded verbatim in the report's provenance — endpoint, model
     /// digest, sampling settings. Populated after the run, so read it once the model has answered.
     IReadOnlyDictionary<string, string> Provenance => new Dictionary<string, string>();
@@ -98,16 +113,20 @@ public interface IModel
 
 /// Deterministic, credential-free baseline whose reply for each item is read from a fixture.
 /// Used for the offline demo and CI so the harness runs with zero API keys. Note that a
-/// ScriptedModel is keyed on item id and never sees a system prompt — the baselines are
-/// therefore NOT running under the same conditions as a live model.
+/// ScriptedModel is keyed on item id and never sees a system prompt — it is therefore untouched by
+/// `--prompt`, and NOT running under the same conditions as a live model. That is precisely why the
+/// baselines are reference points and not competitors.
 public sealed class ScriptedModel(string name, IReadOnlyDictionary<string, string> repliesByItemKey) : IModel
 {
     public string Name { get; } = name;
 
+    public bool IsBaseline => true;
+
     public IReadOnlyDictionary<string, string> Provenance { get; } = new Dictionary<string, string>
     {
         ["kind"] = "scripted-fixture",
-        ["source"] = "data/demo-responses.json"
+        ["source"] = "data/demo-responses.json",
+        ["systemPrompt"] = "none — a fixture never sees one"
     };
 
     public Task<string> AnswerAsync(Item item, CancellationToken ct = default)

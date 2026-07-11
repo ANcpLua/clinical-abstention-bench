@@ -67,13 +67,17 @@ public class ReportTests
         Assert.Null(scripted.SystemPrompt); // fixtures never see one — the README's caveat, enforced
     }
 
-    /// A live model's system prompt is the single biggest confound on an abstention number, so it
-    /// must land in the transcript rather than being implicit in the source.
+    /// A live model's system prompt is the single biggest confound on an abstention number, so it must
+    /// land in the transcript rather than being implicit in the source — and the model's own name
+    /// carries the prompt, so no row can be read without knowing which prompt produced it.
     [Fact]
     public void Build_RecordsTheSystemPromptInForce_ForALiveModel()
     {
+        var prompts = Bench.LoadPrompts(Bench.FindDataDir());
+        var prompt = Bench.SelectPrompts(prompts, []).Single();
+
         var item = new Item("c01", Variant.Full, "prompt?", "Flu", MustAbstain: false);
-        var model = new OllamaModel("llama3.2:3b");
+        var model = new OllamaModel("llama3.2:3b", prompt);
         var results = new List<ItemResult>
         {
             new(model.Name, item, model.SystemPrompt, "Flu.", Outcome.CorrectAnswer)
@@ -83,12 +87,19 @@ public class ReportTests
             "ollama", 1, 1, [model],
             new Dictionary<string, IReadOnlyList<ItemResult>> { [model.Name] = results },
             [Scorecard.From(model.Name, results)],
-            FixedTime);
+            FixedTime,
+            prompts: [prompt]);
 
-        Assert.Equal(OllamaModel.DefaultSystemPrompt, report.Transcripts[0].SystemPrompt);
-        Assert.Equal(OllamaModel.DefaultSystemPrompt, report.Provenance.Models[0].SystemPrompt);
+        Assert.Equal("llama3.2:3b @ abstention-offered", model.Name);
+        Assert.Equal(prompt.Text, report.Transcripts[0].SystemPrompt);
+        Assert.Equal(prompt.Text, report.Provenance.Models[0].SystemPrompt);
+        Assert.False(report.Provenance.Models[0].IsBaseline);
         Assert.Equal("ollama", report.Provenance.Models[0].Details["kind"]);
         Assert.Equal("0", report.Provenance.Models[0].Details["temperature"]);
+        Assert.Equal(prompt.Name, report.Provenance.Models[0].Details["promptName"]);
+
+        // The prompt text travels with the run, verbatim.
+        Assert.Equal(prompt.Text, report.Provenance.Prompts.Single().Text);
     }
 
     /// Fail-closed: a report is never written from partial results.

@@ -94,6 +94,9 @@ dotnet test                                         # unit + integration tests
 dotnet run --project src/AbstentionBench -- demo    # offline demo, no credentials
 dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b --html report.html
                                                     # + a real local LLM via Ollama, with an HTML report
+dotnet run --project src/AbstentionBench -- ollama --prompt all --no-baselines
+                                                    # sweep every system prompt — see how much of the
+                                                    # unsupported-answer rate is the prompt, not the model
 ```
 
 ### Gating a model in your own CI
@@ -119,8 +122,9 @@ model is an **error**, not a silent no-op, so a typo can't turn a gated run gree
 
 ## A real model, measured
 
-Running `llama3.2:3b` (Ollama, temperature 0, with the abstention option offered in the system
-prompt) against the 12 case pairs:
+Running `llama3.2:3b` (Ollama, temperature 0) against the 12 cases, under the default
+`abstention-offered` system prompt — and read that qualifier as load-bearing, because
+[it turns out to be doing most of the work](#the-system-prompt-is-a-variable-not-a-constant):
 
 | model | abstain-recall | unsupported | answer-acc | selective-acc |
 |---|---|---|---|---|
@@ -184,6 +188,42 @@ problem than the scorecard alone supports, and it is the whole reason this arm e
 > The probe is deliberately **not** folded into selective-accuracy. Like abstention-recall, it is
 > trivially maximised by a model that answers nothing — `AlwaysAbstainBaseline` scores 100 % on it.
 > It is a probe, not a score.
+
+## The system prompt is a variable, not a constant
+
+Everything above was measured under **one** system prompt. That turns out to matter more than
+anything else in this repository.
+
+`data/prompts.json` holds four, differing only in whether — and how hard — the model is pushed toward
+declining. Sweep them with `--prompt all`. Same model, same weights, temperature 0, same twelve cases:
+
+| llama3.2:3b @ prompt | abstain-recall | unsupported | answer-acc | over-abstain | selective-acc |
+|---|---|---|---|---|---|
+| `abstention-unmentioned` | 0 % [0–24] | 100 % [76–100] | 100 % [76–100] | 0 % [0–24] | 50 % [31–69] |
+| `abstention-offered` *(default)* | 0 % [0–24] | 100 % [76–100] | 100 % [76–100] | 0 % [0–24] | 50 % [31–69] |
+| `no-forced-choice` | 25 % [9–53] | 75 % [47–91] | 100 % [76–100] | 0 % [0–24] | 62 % [43–79] |
+| `abstention-encouraged` | **75 % [47–91]** | **25 % [9–53]** | 58 % [32–81] | 42 % [19–68] | 67 % [47–82] |
+
+**The headline finding was mostly the prompt.** Tell the model that a confident wrong diagnosis is
+worse than declining — one sentence — and the same 3B model goes from abstaining on **0 of 12**
+ablated items to **9 of 12**, and from 1/12 to 12/12 on the counterfactual arm. It was never unable
+to decline. It was not asked to.
+
+Two things follow, and they cut in opposite directions:
+
+- **It is not free.** Under `abstention-encouraged`, over-abstention jumps to 42 % and answer-accuracy
+  falls to 58 % — the model starts declining on cases it could have answered. Selective accuracy rises
+  (50 % → 67 %) but the intervals overlap, so at n = 12 even *that* is not a demonstrated improvement.
+  Pushing a model to abstain trades one error for the other; this benchmark's job is to price the trade.
+- **The forced-choice phrasing costs real abstention.** Every prompt but one ends *"the single most
+  likely diagnosis"* — asking for the top of the differential, then penalising the model for giving
+  it. Deleting those four words (`no-forced-choice`) alone moves abstain-recall from 0 % to 25 %. That
+  is a live construct-validity concern in `TASK.md`, and it is now a **measurable** one rather than an
+  argument.
+
+So the honest form of this benchmark's claim is never *"llama3.2:3b answers when it shouldn't."* It is
+*"llama3.2:3b, under this prompt, answers when it shouldn't"* — and the prompt travels with the number,
+in the model's own name (`llama3.2:3b @ abstention-offered`) and verbatim in the report.
 
 The harness is **fail-closed**: it exits non-zero if any item can't be scored or a requested model is
 unavailable — a missing credential is an *error*, never a silent skip.

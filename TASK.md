@@ -80,6 +80,22 @@ under-determined"* — checkable, rather than authored. The ones worth your eye:
       likely diagnosis?"* — we ask for the top of the differential, then penalise the model for giving
       it. Reconcile the user prompt with the system prompt's abstention offer.
 
+      **This is now measurable rather than arguable.** `data/prompts.json` carries a `no-forced-choice`
+      system prompt that drops the words *"the single most likely diagnosis"*. Deleting those four
+      words alone moves llama3.2:3b's abstention-recall from **0 % → 25 %**. The contradiction is
+      costing real abstention, and the size of the artifact is now a number you can re-measure:
+      `--prompt no-forced-choice` against `--prompt abstention-offered`. The decision that remains is
+      yours: fix the *user* prompts in `cases.json` (which changes the dataset), or keep the forced
+      choice and treat `no-forced-choice` as the controlled comparison.
+
+- [ ] **The prompt sweep is evidence about the vignettes, not just the model.** Under
+      `abstention-encouraged`, llama3.2:3b abstains on 9 of 12 ablated items. The three it still
+      answers are **c04 (anemia), c06 (gout), c12 (hypoglycemia)** — and c12 is one of the two cases
+      already flagged above as arguably-correct-to-answer. A model that has been told plainly that
+      guessing is worse than declining, and *still* answers those three, is weak evidence that those
+      three ablated prompts are not as under-determined as the others. Worth weighing when you review
+      the vignettes.
+
 ## v1 backlog
 - [ ] Per-item transcripts + run provenance in the report (today's report.json is aggregates only, so
       the llama3.2:3b claim is unauditable and has no committed evidence behind it)
