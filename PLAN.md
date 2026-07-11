@@ -1,106 +1,63 @@
-# Plan: keep clinical-abstention-bench defensible
+# Plan: preserve the v2 evidence-assessment contract
 
-This repository is a .NET 10 selective-prediction benchmark. Its engineering contract is
-fail-closed: every requested item must produce a score, every requested model must be available, and
-every requested gate must be enforced. Its clinical content is synthetic methodology data, not
-patient data or medical advice.
+## Sources of truth
 
-## Operational sources of truth
+- `data/cases.json` owns the 12 case triplets and diagnosis/certainty/urgency targets.
+- `data/concepts.json` owns complete-string diagnostic names and aliases.
+- `data/prompts.json` owns complete inference profiles: system message plus user template.
+- `CLINICAL_REVIEW.md` records adjudication, limitations, and evidence.
+- `StructuredConceptGrader` owns strict response parsing and concept resolution.
+- Current schema-5 files under `results/` are model observations; schema-4 files under
+  `results/legacy-v1/` are frozen historical observations, not current labels.
 
-- `data/cases.json` owns the twelve case labels, accepted forms, and three variants: `full`,
-  `ablated`, and `counterfactual`.
-- `data/prompts.json` owns the four system-prompt arms and the default selection.
-- `LexicalGrader` owns the current scoring semantics; its name travels with every report.
-- Committed files under `results/` are auditable run artifacts, not input data or a replacement for
-  the case and prompt files.
+## Contract invariants
 
-The case file is authoritative for program execution, but it is **not clinically canonical** until
-the human review in `TASK.md` is complete.
+1. Stored vignettes contain evidence only. Prompt profiles render every question centrally.
+2. `evidence-required` is the sole canonical profile. `forced-choice` is a noncanonical stress arm.
+3. A target diagnosis may be null, established, or probable independently of the variant name.
+4. Null diagnosis requires `indeterminate`; a non-null diagnosis cannot be `indeterminate`.
+5. Urgency is scored independently. Diagnostic deferral never implies routine care.
+6. Aliases are complete fields. Matching is case-insensitive after trimming only; no substring rule.
+7. Broader acceptable concepts are explicit per target. A parent is never inferred implicitly.
+8. Contrast variants support a determinate alternative; they are not negative-only rule-out claims.
+9. Selective accuracy is conditional on answered primary items and must travel with coverage.
+10. Current reports retain exact sent prompts, raw responses, parsed response, target, grade, model
+    digest, sampling configuration, counts, and Wilson intervals.
 
-## Reference-policy architecture
+## Reference policies
 
-The offline demo contains three deterministic policies generated from `data/cases.json`:
+The offline demo generates three structured policies directly from repository targets:
 
-| policy | construction | purpose |
+| Policy | Rule | Purpose |
 |---|---|---|
-| `AlwaysAnswerBaseline` | always returns the case's original diagnosis label | degenerate always-answer pole |
-| `AlwaysAbstainBaseline` | always returns `INSUFFICIENT INFORMATION` | degenerate always-decline pole |
-| `LabelOracleBaseline` | returns the supported label for each variant | label-defined target |
+| `AlwaysAnswerBaseline` | original concept, established, routine | always-answer failure pole |
+| `AlwaysAbstainBaseline` | null, indeterminate, routine | always-defer failure pole |
+| `LabelOracleBaseline` | configured target in every dimension | scoring-path target, perfect by construction |
 
-`LabelOracleBaseline` is perfect by construction because it consults the labels. It demonstrates
-that the metrics and gate can represent the intended target; it does not demonstrate that the case
-labels, accepted forms, or counterfactual claims are clinically correct. Reference policies never
-receive a system prompt and must remain visually and textually separate from live-model results.
-
-Live adapters receive only the item key and prompt. Ground-truth answers and scoring metadata must
-not enter an inference request. Ollama is the implemented live adapter. A cloud-provider adapter is
-only a possible future feature after a provider and contract are chosen; there is no cloud-model CLI
-mode today.
-
-## Metric and report invariants
-
-- Full items measure answer accuracy and over-abstention.
-- Ablated items measure abstention recall and unsupported-answer rate.
-- Selective accuracy covers the full and ablated arms only.
-- Counterfactual items form a separate evidence-sensitivity probe. They must not be folded into
-  selective accuracy, because that would make abstention the majority label and reward silence.
-- Every rate carries its count and 95 % Wilson score interval on console, JSON, and HTML surfaces.
-- Every report carries per-item prompts, raw responses, outcomes, the grader name, system prompt,
-  model provenance, and run timestamp.
-- Prompt sweeps preserve one result per model-and-prompt pair. Reference policies are unaffected by
-  all four prompt arms because they never receive a system prompt.
+They never receive a system prompt and must remain visually separate from live-model rows.
 
 ## Verification gates
 
-Run these after every behavioral or data-schema change:
+Run after behavioral, schema, prompt, or target changes:
 
 ```bash
 dotnet build -c Release
 dotnet test -c Release --no-build
 dotnet run -c Release --no-build --project src/AbstentionBench -- demo
-
 dotnet run -c Release --no-build --project src/AbstentionBench -- \
-  demo --only LabelOracleBaseline --gate 0.9 --gate-answer-acc 0.9
+  demo --only LabelOracleBaseline \
+  --gate-coverage 0.75 --gate-selective-acc 0.9 --gate-urgency-acc 0.9
 ```
 
-CI must also prove both failure directions:
+CI must also demonstrate that AlwaysAnswer fails the selective-accuracy floor and AlwaysAbstain
+fails the coverage floor.
 
-- `AlwaysAnswerBaseline` fails an abstention-recall gate.
-- `AlwaysAbstainBaseline` passes a recall-only gate but fails when the answer-accuracy floor is added.
+Any change to evidence text or either message in a prompt profile requires a fresh model run. A pure
+target, concept, or grader edit may rescore recorded raw output, but the report must then be rebuilt
+against the exact new contract and retain the original sent messages. Never rewrite legacy-v1 files.
 
-Do not document a remembered test count; the executed test command is the evidence.
+## Next validity step
 
-## Construct validity — human decision required
-
-> ⚠️ The twelve counterfactual findings, the accepted answer forms, and any narrower
-> `counterfactualExcludedAnswers` are pending human review. Green engineering checks and the label
-> oracle's perfect score do not constitute clinical sign-off.
-
-The review must explicitly resolve:
-
-- c03: a normal ECG negates STEMI, not all acute coronary syndromes; decide how replies such as
-  “unstable angina” and broader MI aliases should score.
-- c06: the flipped hot-joint case may still be septic and is an emergency; decide whether abstention
-  is the right benchmark target.
-- c10: the examination and normal appendix on CT conflict; decide whether under-determined is a
-  defensible label.
-- c11: the label depends on accepting the early-CT sensitivity premise.
-- c02, c05, and c12: these carry the reported evidence-insensitivity finding and require the hardest
-  review.
-- All ablated prompts: decide whether a competent clinician would genuinely decline, especially c08
-  and c12.
-- Forced-choice wording: decide whether to change the user prompts or retain `no-forced-choice` as a
-  controlled comparison.
-
-Any prompt edit creates a new experimental condition and requires a new model run. A label or grader
-edit may permit rescoring an existing raw response, but the resulting report must remain bound to the
-exact case data, system prompt, and grader that produced the score.
-
-## Future work
-
-- Replace or complement the lexical grader with a validated semantic judge behind `IGrader`.
-- Expand to a larger, sourced, licensed, clinician-reviewed dataset.
-- Add risk-coverage curves once the sample supports them.
-- Sweep temperature as another controlled variable.
-- Consider a cloud-provider adapter only after its provider contract is concrete.
-- Package the harness as a `dotnet new` template.
+Commission independent blinded clinical review. Reviewers should annotate diagnosis concept,
+specificity, certainty, urgency, and acceptable parents separately, with disagreements retained.
+Until then, describe v2 as evidence-adjudicated synthetic methodology data, not clinician-validated.

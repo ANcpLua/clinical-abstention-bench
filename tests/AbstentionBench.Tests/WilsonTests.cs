@@ -61,7 +61,8 @@ public class WilsonTests
     [Fact]
     public void Interval_NarrowsAsTheSampleGrows()
     {
-        double Width(int n) { var (lo, hi) = Wilson.Interval(n, n); return hi - lo; }
+        double Width(int n)
+        { var (lo, hi) = Wilson.Interval(n, n); return hi - lo; }
 
         Assert.True(Width(12) > Width(120));
         Assert.True(Width(120) > Width(1200));
@@ -119,24 +120,30 @@ public class RateTests
     {
         var labelOracle = RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle);
         var card = RepositoryBenchmark.Scorecards()[labelOracle.Name];
-        var armTotal = RepositoryBenchmark.Cases.Count;
 
-        var expectedRates = new (Rate Rate, int Successes, int Total)[]
+        var rates = new[]
         {
-            (card.AbstentionRecall, armTotal, armTotal),
-            (card.UnsupportedAnswerRate, 0, armTotal),
-            (card.AnswerAccuracy, armTotal, armTotal),
-            (card.OverAbstentionRate, 0, armTotal),
-            (card.SelectiveAccuracy, armTotal * 2, armTotal * 2),
-            (card.EvidenceSensitivity, armTotal, armTotal),
-            (card.EvidenceInsensitivityRate, 0, armTotal)
+            card.Coverage,
+            card.SelectiveAccuracy,
+            card.SelectiveRisk,
+            card.DecisionAccuracy,
+            card.AbstentionRecall,
+            card.UnsupportedAnswerRate,
+            card.OverabstentionRate,
+            card.CertaintyAccuracy,
+            card.UrgencyAccuracy,
+            card.UndertriageRate,
+            card.ContrastAccuracy,
+            card.PairedRevisionAccuracy,
+            card.OriginalTargetPersistence,
+            card.ContrastCertaintyAccuracy,
+            card.ContrastUrgencyAccuracy,
+            card.ContrastUndertriageRate
         };
 
-        foreach (var (rate, successes, total) in expectedRates)
+        foreach (var rate in rates)
         {
-            var expectedInterval = Wilson.Interval(successes, total);
-            Assert.Equal(successes, rate.Successes);
-            Assert.Equal(total, rate.Total);
+            var expectedInterval = Wilson.Interval(rate.Successes, rate.Total);
             Assert.Equal(expectedInterval.Lower, rate.Lower);
             Assert.Equal(expectedInterval.Upper, rate.Upper);
             Assert.InRange(rate.Value, rate.Lower, rate.Upper);

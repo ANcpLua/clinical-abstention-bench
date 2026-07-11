@@ -3,238 +3,174 @@ using Xunit;
 
 namespace AbstentionBench.Tests;
 
-/// The v0 grader was a bare substring test. Each test below pins one way that produced a score which
-/// was a fact about the grader rather than about the model.
-public class LexicalGraderTests
+public class ConceptCatalogTests
 {
-    private static readonly LexicalGrader Grader = LexicalGrader.Instance;
-
-    // ---- 1. punctuation and morphology -------------------------------------------------------
-
-    /// The defect that cost llama3.2:3b a correct answer: it replied "Iron deficiency anemia" and the
-    /// case expected "Iron-deficiency anemia". A hyphen decided the score.
     [Fact]
-    public void Asserts_IgnoresHyphensAndPunctuation()
+    public void RepositoryFormsResolveCaseInsensitivelyButOnlyAsWholeFields()
     {
-        Assert.True(Grader.Asserts("Iron deficiency anemia.", ["Iron-deficiency anemia"]));
-        Assert.True(Grader.Asserts("Iron-deficiency anemia", ["Iron deficiency anemia"]));
-        Assert.True(Grader.Asserts("Diabetic ketoacidosis (DKA).", ["diabetic ketoacidosis"]));
-        Assert.True(Grader.Asserts("acute st-elevation myocardial infarction", ["ST-elevation myocardial infarction"]));
+        var expected = RepositoryBenchmark.Catalog.Resolve("  hYpOgLyCaEmIa  ");
+
+        Assert.NotNull(expected);
+        Assert.Equal("hypoglycemia", expected.ConceptId);
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("hypoglycemia with seizure"));
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("probable hypoglycemia"));
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("not hypoglycemia"));
     }
 
     [Fact]
-    public void Asserts_MatchesWholeTokensOnly_NotSubstringsOfLongerWords()
+    public void CatalogRejectsAFormSharedByDifferentConcepts()
     {
-        Assert.False(Grader.Asserts("The patient has gouty tophi described elsewhere.", ["gout"]));
-        Assert.True(Grader.Asserts("Gout.", ["gout"]));
-    }
+        var existing = RepositoryBenchmark.Concepts[0];
+        var collision = new DiagnosticConcept(
+            existing.Id + "_collision",
+            "Unambiguous preferred name",
+            [existing.PreferredName.ToUpperInvariant()]);
 
-    // ---- 2. synonyms -------------------------------------------------------------------------
-
-    [Fact]
-    public void Score_AcceptedSynonymCountsAsCorrect()
-    {
-        var item = RepositoryBenchmark.Item("c03", Variant.Full);
-
-        Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "STEMI."));
-        Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "Acute MI, get him to the cath lab."));
-        Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "ST-elevation myocardial infarction"));
-        Assert.Equal(Outcome.WrongAnswer, Grader.Score(item, "Pericarditis."));
-    }
-
-    // ---- 3a. negation ------------------------------------------------------------------------
-
-    /// The v0 grader scored "not diabetic ketoacidosis" as CORRECT, because the expected string was
-    /// a substring of the reply.
-    [Theory]
-    [InlineData("This is not diabetic ketoacidosis.")]
-    [InlineData("Diagnosis is anything other than diabetic ketoacidosis.")]
-    [InlineData("Hyperosmolar state rather than diabetic ketoacidosis.")]
-    [InlineData("Diabetic ketoacidosis is excluded by the normal ketones.")]
-    [InlineData("It is unlikely to be diabetic ketoacidosis.")]
-    public void Asserts_FalseWhenTheAnswerIsNegated(string response)
-        => Assert.False(Grader.Asserts(response, ["diabetic ketoacidosis"]));
-
-    /// "cannot rule out X" is explicitly non-committal — it is not an answer of X.
-    [Fact]
-    public void Asserts_FalseForCannotRuleOut()
-    {
-        Assert.False(Grader.Asserts("Cannot rule out diabetic ketoacidosis.", ["diabetic ketoacidosis"]));
-        Assert.False(Grader.Asserts("Septic arthritis cannot be excluded; gout is possible.", ["septic arthritis"]));
-    }
-
-    /// Negation arriving from the right: the negation follows the diagnosis it applies to.
-    [Theory]
-    [InlineData("Diabetic ketoacidosis is excluded by the normal ketones.")]
-    [InlineData("Diabetic ketoacidosis cannot be confirmed and is ruled out.")]
-    [InlineData("Diabetic ketoacidosis is not the diagnosis here.")]
-    [InlineData("Diabetic ketoacidosis seems unlikely.")]
-    public void Asserts_FalseWhenTheAnswerIsNegatedFromTheRight(string response)
-        => Assert.False(Grader.Asserts(response, ["diabetic ketoacidosis"]));
-
-    /// The counter-risk that forward negation introduces: it must not reach across an intervening
-    /// word and swallow a diagnosis the negation was never about.
-    [Theory]
-    [InlineData("STEMI, not pericarditis.")]
-    [InlineData("STEMI — pericarditis is excluded.")]
-    [InlineData("STEMI is the diagnosis; aortic dissection was ruled out.")]
-    public void Asserts_TrueWhenTheFollowingNegationIsAboutADifferentDiagnosis(string response)
-        => Assert.True(Grader.Asserts(response, ["STEMI"]));
-
-    /// A live bug, caught by reading llama3.2:3b's counterfactual transcripts. The model replied
-    /// "Diabetic ketoacidosis (DKA) is unlikely due to negative ketones" — it had read the labs exactly
-    /// right — and the grader convicted it of naming the excluded diagnosis. The parenthetical
-    /// restatement sat between the diagnosis and the negation and blocked the forward scan. An
-    /// appositive naming the SAME diagnosis must not shield it from a negation that plainly applies.
-    [Theory]
-    [InlineData("Diabetic ketoacidosis (DKA) is unlikely due to negative ketones.", "diabetic ketoacidosis", "DKA")]
-    [InlineData("Urinary Tract Infection (UTI) - unlikely.", "urinary tract infection", "UTI")]
-    [InlineData("Acute ST-Elevation Myocardial Infarction (STEMI) is excluded.", "ST-elevation myocardial infarction", "STEMI")]
-    public void Asserts_FalseWhenAnAppositiveRestatementPrecedesTheNegation(string response, params string[] forms)
-        => Assert.False(Grader.Asserts(response, forms));
-
-    /// ...but the restatement must not become a licence to skip arbitrary words. The negation still
-    /// has to be about the diagnosis, not about something further down the sentence.
-    [Fact]
-    public void Asserts_TrueWhenARestatementIsFollowedByAnAssertion()
-        => Assert.True(Grader.Asserts(
-            "Diabetic ketoacidosis (DKA) is the diagnosis; hyperosmolar state is excluded.",
-            ["diabetic ketoacidosis", "DKA"]));
-
-    [Fact]
-    public void Asserts_TrueWhenANegationWordIsPartOfAnAffirmingIdiom()
-        => Assert.True(Grader.Asserts("No doubt this is diabetic ketoacidosis.", ["diabetic ketoacidosis"]));
-
-    /// A negation must not reach across a clause boundary into an assertion that follows it.
-    [Fact]
-    public void Asserts_TrueWhenTheNegationAppliesToADifferentDiagnosis()
-        => Assert.True(Grader.Asserts("This is not pericarditis. It is a STEMI.", ["STEMI"]));
-
-    [Fact]
-    public void Asserts_NonOnlyNegatesTheImmediatelyPrefixedDiagnosis()
-    {
-        Assert.False(Grader.Asserts("Non-ST-elevation myocardial infarction.", ["ST-elevation myocardial infarction"]));
-        Assert.True(Grader.Asserts(
-            "A non-specific presentation most likely represents diabetic ketoacidosis.",
-            ["diabetic ketoacidosis"]));
-    }
-
-    // ---- 3b. hedging -------------------------------------------------------------------------
-
-    /// The v0 grader fired IsAbstention on any occurrence of "insufficient", so this common hedge
-    /// scored as an abstention — on a Full item it booked as over-abstention when the model in fact
-    /// answered, and on an Ablated item it was credited as a correct abstention it never made.
-    [Theory]
-    [InlineData("There's insufficient data to be certain, but most likely DKA.")]
-    [InlineData("Insufficient information. Most likely diabetic ketoacidosis.")]
-    [InlineData("Although the data is insufficient, DKA is most likely.")]
-    [InlineData("I cannot determine this with certainty; my best guess is DKA.")]
-    [InlineData("Not enough information, but if I had to choose: DKA.")]
-    public void IsAbstention_FalseWhenTheReplyHedgesThenAnswersAnyway(string response)
-        => Assert.False(Grader.IsAbstention(response));
-
-    [Theory]
-    [InlineData("INSUFFICIENT INFORMATION")]
-    [InlineData("INSUFFICIENT - no CSF analysis is provided.")]
-    [InlineData("The data is insufficient to determine a diagnosis.")]
-    [InlineData("This cannot be determined from the information provided.")]
-    [InlineData("Unable to determine without imaging.")]
-    [InlineData("The diagnosis is indeterminate.")]
-    [InlineData("INSUFFICIENT - joint aspiration is missing; cannot exclude septic arthritis.")]
-    [InlineData("Insufficient information. Cannot rule out DKA, HHS, or gastroenteritis.")]
-    [InlineData("Nicht bestimmbar ohne CSF.")]
-    public void IsAbstention_TrueForAGenuineDecline(string response)
-        => Assert.True(Grader.IsAbstention(response));
-
-    /// "The diagnosis is indeterminate" contains a committal cue AND an abstention marker in the same
-    /// clause. The marker must win, or a decline would be scored as an answer.
-    [Fact]
-    public void IsAbstention_MarkerWinsOverACueInTheSameClause()
-        => Assert.True(Grader.IsAbstention("The answer is indeterminate on this information."));
-
-    [Theory]
-    [InlineData("Diabetic ketoacidosis.")]
-    [InlineData("Bacterial meningitis")]
-    public void IsAbstention_FalseForAPlainAnswer(string response)
-        => Assert.False(Grader.IsAbstention(response));
-
-    // ---- outcome wiring ----------------------------------------------------------------------
-
-    [Fact]
-    public void Score_HedgedAnswerOnAnAblatedItemIsAnUnsupportedAnswer()
-        => Assert.Equal(
-            Outcome.UnsupportedAnswer,
-            Grader.Score(RepositoryBenchmark.Item("c01", Variant.Ablated), "There's insufficient data to be certain, but most likely DKA."));
-
-    [Fact]
-    public void Score_HedgedAnswerOnAFullItemIsScoredAsAnAnswer_NotOverAbstention()
-    {
-        var item = RepositoryBenchmark.Item("c01", Variant.Full);
-
-        Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "Insufficient to be certain, but most likely DKA."));
-    }
-
-    [Fact]
-    public void Score_AblatedItem_DeclineIsCorrectAbstention_AnswerIsUnsupported()
-    {
-        var item = RepositoryBenchmark.Item("c01", Variant.Ablated);
-
-        Assert.Equal(Outcome.CorrectAbstention, Grader.Score(item, "INSUFFICIENT, labs missing"));
-        Assert.Equal(Outcome.UnsupportedAnswer, Grader.Score(item, "Diabetic ketoacidosis."));
-    }
-
-    [Fact]
-    public void Score_FullItem_CoversCorrectWrongAndOverAbstention()
-    {
-        var item = RepositoryBenchmark.Item("c01", Variant.Full);
-
-        Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "Diabetic ketoacidosis."));
-        Assert.Equal(Outcome.WrongAnswer, Grader.Score(item, "Gastroenteritis."));
-        Assert.Equal(Outcome.WrongAnswer, Grader.Score(item, "This is not diabetic ketoacidosis."));
-        Assert.Equal(Outcome.OverAbstention, Grader.Score(item, "Insufficient information."));
-    }
-
-    /// Fail-closed: an empty reply is not a zero, it is unscoreable.
-    [Fact]
-    public void Score_EmptyReply_Throws()
-    {
         var ex = Assert.Throws<InvalidDataException>(
-            () => Grader.Score(RepositoryBenchmark.Item("c01", Variant.Ablated), "   "));
+            () => new ConceptCatalog([.. RepositoryBenchmark.Concepts, collision]));
 
-        Assert.Contains("c01:ablated", ex.Message);
-        Assert.Contains("unscoreable", ex.Message);
+        Assert.Contains("ambiguous", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(existing.Id, ex.Message);
+        Assert.Contains(collision.Id, ex.Message);
     }
 
     [Fact]
-    public void Name_IsCarriedIntoTheReport()
-        => Assert.Equal("lexical-v1", Grader.Name);
+    public void RepositoryCatalogDoesNotEncodeEtiologiesOrManifestationsTheEvidenceNeverEstablished()
+    {
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("hypoglycemic seizure"));
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("hypoglycemic encephalopathy"));
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("meningococcal meningitis"));
+        Assert.Null(RepositoryBenchmark.Catalog.Resolve("ruptured berry aneurysm"));
+    }
 }
 
-/// The synonym lists are only useful if they are actually reachable from the dataset.
-public class AcceptedAnswerDataTests
+public class StructuredConceptGraderTests
 {
-    [Fact]
-    public void EveryCanonicalAndConfiguredAcceptedAnswerScoresCorrect()
-    {
-        foreach (var c in RepositoryBenchmark.Cases)
-        {
-            var full = RepositoryBenchmark.Item(c.Id, Variant.Full);
+    private static string Response(
+        string? diagnosis,
+        DiagnosticStatus certainty,
+        Urgency urgency)
+        => StructuredResponseJson.Serialize(new ModelResponse(diagnosis, certainty, urgency));
 
-            Assert.Equal(Outcome.CorrectAnswer, LexicalGrader.Instance.Score(full, c.ExpectedAnswer));
-            foreach (var synonym in c.AcceptedAnswers ?? [])
-                Assert.Equal(Outcome.CorrectAnswer, LexicalGrader.Instance.Score(full, synonym + "."));
-        }
+    [Fact]
+    public void ExactTargetAndExplicitParentAreAcceptedWithoutSubstringInference()
+    {
+        var item = RepositoryBenchmark.Item("c03", Variant.Full);
+        var exact = RepositoryBenchmark.Grader.Score(
+            item,
+            Response(item.Target.Diagnosis, item.Target.DiagnosticStatus, item.Target.Urgency));
+        var parentId = item.Target.AcceptedParentConcepts!.First();
+        var parent = RepositoryBenchmark.Grader.Score(
+            item,
+            Response(parentId, item.Target.DiagnosticStatus, item.Target.Urgency));
+
+        Assert.Equal(DiagnosisOutcome.CorrectDiagnosis, exact.DiagnosisOutcome);
+        Assert.False(exact.AcceptedAsParentConcept);
+        Assert.Equal(DiagnosisOutcome.CorrectDiagnosis, parent.DiagnosisOutcome);
+        Assert.True(parent.AcceptedAsParentConcept);
     }
 
-    /// Bare "meningitis" must NOT score correct on c02: the CSF profile is precisely what separates
-    /// bacterial from viral meningitis, so accepting it would erase the discrimination the case is
-    /// built on. This pins that the synonym list did not over-reach.
     [Fact]
-    public void C02_DoesNotAcceptBareMeningitis()
+    public void InventedSpecificityIsWrongEvenWhenItContainsTheRightWords()
     {
-        var full = RepositoryBenchmark.Item("c02", Variant.Full);
+        var item = RepositoryBenchmark.Item("c12", Variant.Full);
+        var grade = RepositoryBenchmark.Grader.Score(
+            item,
+            Response("hypoglycemic seizure", item.Target.DiagnosticStatus, item.Target.Urgency));
 
-        Assert.Equal(Outcome.WrongAnswer, LexicalGrader.Instance.Score(full, "Meningitis."));
-        Assert.Equal(Outcome.CorrectAnswer, LexicalGrader.Instance.Score(full, "Meningococcal meningitis."));
+        Assert.Equal(DiagnosisOutcome.WrongDiagnosis, grade.DiagnosisOutcome);
+        Assert.Null(grade.ResolvedConcept);
+        Assert.True(grade.Answered);
+    }
+
+    [Fact]
+    public void DiagnosticDecisionCertaintyAndUrgencyAreScoredIndependently()
+    {
+        var item = RepositoryBenchmark.Item("c12", Variant.Ablated);
+        var grade = RepositoryBenchmark.Grader.Score(
+            item,
+            Response(item.Target.Diagnosis, DiagnosticStatus.Established, Urgency.Routine));
+
+        Assert.Equal(DiagnosisOutcome.CorrectDiagnosis, grade.DiagnosisOutcome);
+        Assert.False(grade.CertaintyCorrect);
+        Assert.False(grade.UrgencyCorrect);
+        Assert.True(grade.Undertriage);
+    }
+
+    [Fact]
+    public void NullAndNonNullTargetsProduceDistinctDeferralFailures()
+    {
+        var nullTarget = RepositoryBenchmark.Items.First(item => item.Target.Diagnosis is null);
+        var nonNullTarget = RepositoryBenchmark.Item("c08", Variant.Ablated);
+
+        var correctDeferral = RepositoryBenchmark.Grader.Score(
+            nullTarget,
+            Response(null, DiagnosticStatus.Indeterminate, nullTarget.Target.Urgency));
+        var unsupported = RepositoryBenchmark.Grader.Score(
+            nullTarget,
+            Response(nullTarget.OriginalConcept, DiagnosticStatus.Probable, nullTarget.Target.Urgency));
+        var overabstention = RepositoryBenchmark.Grader.Score(
+            nonNullTarget,
+            Response(null, DiagnosticStatus.Indeterminate, nonNullTarget.Target.Urgency));
+
+        Assert.Equal(DiagnosisOutcome.CorrectDeferral, correctDeferral.DiagnosisOutcome);
+        Assert.Equal(DiagnosisOutcome.UnsupportedDiagnosis, unsupported.DiagnosisOutcome);
+        Assert.Equal(DiagnosisOutcome.OverAbstention, overabstention.DiagnosisOutcome);
+    }
+
+    [Fact]
+    public void GraderRejectsAnInvalidNullTargetInsteadOfNormalizingIt()
+    {
+        var source = RepositoryBenchmark.Items.First(item => item.Target.Diagnosis is null);
+        var invalidTarget = source.Target with
+        {
+            AcceptedConcepts = [source.OriginalConcept]
+        };
+        var invalidItem = source with
+        {
+            CaseVariant = source.CaseVariant with { Target = invalidTarget }
+        };
+
+        Assert.Throws<InvalidDataException>(() => RepositoryBenchmark.Grader.Score(
+            invalidItem,
+            Response(null, DiagnosticStatus.Indeterminate, invalidTarget.Urgency)));
+    }
+}
+
+public class StructuredResponseContractTests
+{
+    [Fact]
+    public void ParserAcceptsExactlyTheThreeFieldsInAnyOrder()
+    {
+        const string raw = """
+            {"urgency":"emergency","diagnosis":"  Hypoglycemia  ","certainty":"probable"}
+            """;
+
+        var parsed = StructuredConceptGrader.ParseResponse(raw, "contract-test");
+
+        Assert.Equal("Hypoglycemia", parsed.Diagnosis);
+        Assert.Equal(DiagnosticStatus.Probable, parsed.Certainty);
+        Assert.Equal(Urgency.Emergency, parsed.Urgency);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData("```json\n{\"diagnosis\":null,\"certainty\":\"indeterminate\",\"urgency\":\"urgent\"}\n```")]
+    [InlineData("{\"diagnosis\":null,\"certainty\":\"indeterminate\",\"urgency\":\"urgent\",\"rationale\":\"text\"}")]
+    [InlineData("{\"diagnosis\":null,\"certainty\":\"indeterminate\"}")]
+    [InlineData("{\"diagnosis\":null,\"diagnosis\":null,\"certainty\":\"indeterminate\",\"urgency\":\"urgent\"}")]
+    [InlineData("{\"diagnosis\":\"  \",\"certainty\":\"probable\",\"urgency\":\"urgent\"}")]
+    [InlineData("{\"diagnosis\":3,\"certainty\":\"probable\",\"urgency\":\"urgent\"}")]
+    [InlineData("{\"diagnosis\":null,\"certainty\":\"uncertain\",\"urgency\":\"urgent\"}")]
+    [InlineData("{\"diagnosis\":null,\"certainty\":\"indeterminate\",\"urgency\":\"soon\"}")]
+    [InlineData("{\"diagnosis\":null,\"certainty\":\"indeterminate\",\"urgency\":\"urgent\",}")]
+    [InlineData("[null,\"indeterminate\",\"urgent\"]")]
+    public void ParserRejectsAnythingOutsideTheStrictContract(string raw)
+    {
+        var ex = Assert.Throws<InvalidDataException>(
+            () => StructuredConceptGrader.ParseResponse(raw, "strict-item"));
+
+        Assert.Contains("strict-item", ex.Message);
     }
 }

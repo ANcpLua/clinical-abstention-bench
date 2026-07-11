@@ -3,18 +3,13 @@ using System.Text.Json.Serialization;
 
 namespace ClinicalAbstentionBench;
 
-/// The JSON report. Aggregates alone are not auditable — a scorecard says a model produced an
-/// unsupported answer on 12 of 12 items but not *what it said*, so the claim cannot be checked and
-/// cannot be reproduced. Every run therefore carries the full per-item transcript plus enough
-/// provenance (when, which endpoint, which weights, which system prompt) to re-run it.
+/// Auditable JSON report for the v2 structured diagnostic-selectivity contract.
 public static class Report
 {
-    /// Written into every report so a stale artifact can be told apart from a current one.
-    ///  - 2: added per-item transcripts and provenance.
-    ///  - 3: every rate became an object ({value, successes, total, ci95}) where it had been a number.
-    ///  - 4: added the counterfactual arm — a third `variant` value and a sixth `outcome` value
-    ///       (EvidenceInsensitive), either of which breaks a consumer parsing them as a closed set.
-    public const string SchemaVersion = "4";
+    /// Version 5 is a deliberate contract replacement: structured responses, concept ids, diagnostic
+    /// status, urgency, alternative-supported contrasts, and selective-prediction metrics replace the
+    /// v4 lexical outcomes and diagnosis-exclusion probe.
+    public const string SchemaVersion = "5";
 
     public static RunReport Build(
         string mode,
@@ -24,52 +19,84 @@ public static class Report
         IReadOnlyDictionary<string, IReadOnlyList<ItemResult>> resultsByModel,
         IReadOnlyList<Scorecard> cards,
         DateTimeOffset timestamp,
-        IGrader? grader = null,
-        IReadOnlyList<SystemPrompt>? prompts = null)
+        IGrader grader,
+        IReadOnlyList<PromptProfile>? prompts = null)
     {
-        grader ??= LexicalGrader.Instance;
-
         var provenance = new RunProvenance(
             SchemaVersion,
             timestamp.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"),
             mode,
             grader.Name,
             prompts ?? [],
-            [.. models.Select(m => new ModelProvenance(
-                m.Name,
-                m.IsBaseline,
-                m.SystemPrompt,
-                new SortedDictionary<string, string>(m.Provenance.ToDictionary(kv => kv.Key, kv => kv.Value))))]);
+            [.. models.Select(model => new ModelProvenance(
+                model.Name,
+                model.IsBaseline,
+                model.SystemPrompt,
+                new SortedDictionary<string, string>(model.Provenance.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value))))]);
 
         var transcripts = new List<TranscriptEntry>(itemCount * models.Count);
         foreach (var model in models)
         {
             if (!resultsByModel.TryGetValue(model.Name, out var results))
-                throw new InvalidOperationException($"No results recorded for model '{model.Name}' — refusing to write a partial report.");
+                throw new InvalidOperationException(
+                    $"No results recorded for model '{model.Name}' — refusing to write a partial report.");
 
-            transcripts.AddRange(results.Select(r => new TranscriptEntry(
-                r.ModelName,
-                r.Item.CaseId,
-                r.Item.VariantName,
-                r.Item.Key,
-                r.SystemPrompt,
-                r.Item.Prompt,
-                r.Response,
-                r.Outcome.ToString(),
-                r.Item.GroundTruth)));
+            transcripts.AddRange(results.Select(ToTranscript));
         }
 
-        return new RunReport(provenance, caseCount, itemCount, [.. cards.Select(ModelScores.From)], transcripts);
+        return new RunReport(
+            provenance,
+            caseCount,
+            itemCount,
+            [.. cards.Select(ModelScores.From)],
+            transcripts);
     }
 
     public static void Write(string path, RunReport report)
     {
-        var dir = Path.GetDirectoryName(Path.GetFullPath(path));
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
         File.WriteAllText(path, Serialize(report));
     }
 
     public static string Serialize(RunReport report) => JsonSerializer.Serialize(report, Options);
+
+    private static TranscriptEntry ToTranscript(ItemResult result)
+    {
+        var target = result.Item.Target;
+        var grade = result.Grade;
+
+        return new TranscriptEntry(
+            result.ModelName,
+            result.Item.CaseId,
+            result.Item.VariantName,
+            result.Item.Key,
+            result.Item.Relation.WireName(),
+            result.Item.OriginalConcept,
+            result.SystemPrompt,
+            result.SentPrompt,
+            result.RawResponse,
+            new TranscriptResponse(
+                grade.Response.Diagnosis,
+                grade.Response.Certainty.WireName(),
+                grade.Response.Urgency.WireName()),
+            new TranscriptTarget(
+                target.Diagnosis,
+                target.DiagnosticStatus.WireName(),
+                target.AllAcceptedConcepts,
+                target.AcceptedParentConcepts ?? [],
+                target.Urgency.WireName()),
+            new TranscriptGrade(
+                grade.DiagnosisOutcome.WireName(),
+                grade.ResolvedConcept,
+                grade.AcceptedAsParentConcept,
+                grade.CertaintyCorrect,
+                grade.UrgencyCorrect,
+                grade.Undertriage));
+    }
 
     private static readonly JsonSerializerOptions Options = new()
     {
@@ -91,11 +118,9 @@ public sealed record RunProvenance(
     string SchemaVersion,
     string TimestampUtc,
     string Mode,
-    /// Which grader turned replies into outcomes. A score is only meaningful next to this.
     string Grader,
-    /// The system prompts in force, verbatim. Abstention is prompt-sensitive, so a rate is a claim
-    /// about a prompt-and-model pair — the prompt has to travel with the number or the number lies.
-    IReadOnlyList<SystemPrompt> Prompts,
+    /// Complete prompt profiles, including both the system message and user template.
+    IReadOnlyList<PromptProfile> Prompts,
     IReadOnlyList<ModelProvenance> Models);
 
 public sealed record ModelProvenance(
@@ -104,59 +129,124 @@ public sealed record ModelProvenance(
     string? SystemPrompt,
     IReadOnlyDictionary<string, string> Details);
 
-/// One model, one item, one reply, verbatim — the row a reader checks when they doubt a number.
+/// One self-contained audit row. `SentPrompt` is the actual rendered user message, not a value
+/// reconstructed from current case or profile data.
 public sealed record TranscriptEntry(
     string Model,
     string CaseId,
     string Variant,
     string ItemKey,
+    string Relation,
+    string OriginalConcept,
     string? SystemPrompt,
-    string Prompt,
-    string Response,
-    string Outcome,
-    string SupportedAnswer);
+    string SentPrompt,
+    string RawResponse,
+    TranscriptResponse ParsedResponse,
+    TranscriptTarget Target,
+    TranscriptGrade Grade);
 
-/// The aggregate half of the report. Every rate ships with the counts behind it and its 95 % Wilson
-/// interval, so a consumer cannot read a point estimate without also being handed its precision.
+public sealed record TranscriptResponse(
+    string? Diagnosis,
+    string Certainty,
+    string Urgency);
+
+public sealed record TranscriptTarget(
+    string? Diagnosis,
+    string DiagnosticStatus,
+    IReadOnlyList<string> AcceptedConcepts,
+    IReadOnlyList<string> AcceptedParentConcepts,
+    string Urgency);
+
+public sealed record TranscriptGrade(
+    string DiagnosisOutcome,
+    string? ResolvedConcept,
+    bool AcceptedAsParentConcept,
+    bool CertaintyCorrect,
+    bool UrgencyCorrect,
+    bool Undertriage);
+
+/// Aggregate metrics with their exact numerators, denominators, and Wilson intervals.
 public sealed record ModelScores(
     string ModelName,
+    ReportedRate Coverage,
+    ReportedRate SelectiveAccuracy,
+    ReportedRate SelectiveRisk,
+    ReportedRate DecisionAccuracy,
     ReportedRate AbstentionRecall,
     ReportedRate UnsupportedAnswerRate,
-    ReportedRate AnswerAccuracy,
-    ReportedRate OverAbstentionRate,
-    ReportedRate SelectiveAccuracy,
-    ReportedRate EvidenceSensitivity,
-    ReportedRate EvidenceInsensitivityRate,
-    int AblatedTotal,
-    int CorrectAbstentions,
-    int UnsupportedAnswers,
-    int FullTotal,
-    int CorrectAnswers,
-    int WrongAnswers,
-    int OverAbstentions,
-    int CounterfactualTotal,
-    int CounterfactualAbstentions,
-    int EvidenceInsensitiveAnswers,
-    int CounterfactualOtherAnswers)
+    ReportedRate OverabstentionRate,
+    ReportedRate CertaintyAccuracy,
+    ReportedRate UrgencyAccuracy,
+    ReportedRate UndertriageRate,
+    ReportedRate ContrastAccuracy,
+    ReportedRate PairedRevisionAccuracy,
+    ReportedRate OriginalTargetPersistence,
+    ReportedRate ContrastCertaintyAccuracy,
+    ReportedRate ContrastUrgencyAccuracy,
+    ReportedRate ContrastUndertriageRate,
+    int StandardTotal,
+    int StandardAnswered,
+    int StandardCorrectDiagnoses,
+    int StandardWrongDiagnoses,
+    int StandardCorrectDeferrals,
+    int StandardTargetNull,
+    int StandardUnsupportedDiagnoses,
+    int StandardTargetNonNull,
+    int StandardOverabstentions,
+    int StandardCertaintyCorrect,
+    int StandardUrgencyCorrect,
+    int StandardUndertriage,
+    int ContrastTotal,
+    int ContrastCorrectDecisions,
+    int ContrastOriginalTargetPersistence,
+    int ContrastCertaintyCorrect,
+    int ContrastUrgencyCorrect,
+    int ContrastUndertriage,
+    int PairedTotal,
+    int PairedRevisionCorrect)
 {
-    public static ModelScores From(Scorecard c) => new(
-        c.ModelName,
-        ReportedRate.From(c.AbstentionRecall),
-        ReportedRate.From(c.UnsupportedAnswerRate),
-        ReportedRate.From(c.AnswerAccuracy),
-        ReportedRate.From(c.OverAbstentionRate),
-        ReportedRate.From(c.SelectiveAccuracy),
-        ReportedRate.From(c.EvidenceSensitivity),
-        ReportedRate.From(c.EvidenceInsensitivityRate),
-        c.AblatedTotal, c.CorrectAbstentions, c.UnsupportedAnswers,
-        c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions,
-        c.CounterfactualTotal, c.CounterfactualAbstentions,
-        c.EvidenceInsensitiveAnswers, c.CounterfactualOtherAnswers);
+    public static ModelScores From(Scorecard scorecard) => new(
+        scorecard.ModelName,
+        ReportedRate.From(scorecard.Coverage),
+        ReportedRate.From(scorecard.SelectiveAccuracy),
+        ReportedRate.From(scorecard.SelectiveRisk),
+        ReportedRate.From(scorecard.DecisionAccuracy),
+        ReportedRate.From(scorecard.AbstentionRecall),
+        ReportedRate.From(scorecard.UnsupportedAnswerRate),
+        ReportedRate.From(scorecard.OverabstentionRate),
+        ReportedRate.From(scorecard.CertaintyAccuracy),
+        ReportedRate.From(scorecard.UrgencyAccuracy),
+        ReportedRate.From(scorecard.UndertriageRate),
+        ReportedRate.From(scorecard.ContrastAccuracy),
+        ReportedRate.From(scorecard.PairedRevisionAccuracy),
+        ReportedRate.From(scorecard.OriginalTargetPersistence),
+        ReportedRate.From(scorecard.ContrastCertaintyAccuracy),
+        ReportedRate.From(scorecard.ContrastUrgencyAccuracy),
+        ReportedRate.From(scorecard.ContrastUndertriageRate),
+        scorecard.StandardTotal,
+        scorecard.StandardAnswered,
+        scorecard.StandardCorrectDiagnoses,
+        scorecard.StandardWrongDiagnoses,
+        scorecard.StandardCorrectDeferrals,
+        scorecard.StandardTargetNull,
+        scorecard.StandardUnsupportedDiagnoses,
+        scorecard.StandardTargetNonNull,
+        scorecard.StandardOverAbstentions,
+        scorecard.StandardCertaintyCorrect,
+        scorecard.StandardUrgencyCorrect,
+        scorecard.StandardUndertriage,
+        scorecard.ContrastTotal,
+        scorecard.ContrastCorrectDecisions,
+        scorecard.ContrastOriginalTargetPersistence,
+        scorecard.ContrastCertaintyCorrect,
+        scorecard.ContrastUrgencyCorrect,
+        scorecard.ContrastUndertriage,
+        scorecard.PairedTotal,
+        scorecard.PairedRevisionCorrect);
 }
 
-/// A rate as it appears in JSON: the point estimate, the counts it came from, and the 95 % Wilson
-/// score interval. `ci95` is [lower, upper].
 public sealed record ReportedRate(double Value, int Successes, int Total, IReadOnlyList<double> Ci95)
 {
-    public static ReportedRate From(Rate r) => new(r.Value, r.Successes, r.Total, [r.Lower, r.Upper]);
+    public static ReportedRate From(Rate rate)
+        => new(rate.Value, rate.Successes, rate.Total, [rate.Lower, rate.Upper]);
 }

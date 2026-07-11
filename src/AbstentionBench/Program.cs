@@ -1,15 +1,16 @@
 using System.Globalization;
 using ClinicalAbstentionBench;
 
-// clinical-abstention-bench — selective prediction on clinical vignettes.
+// clinical-abstention-bench — calibrated evidence assessment on clinical vignettes.
 //
-// Each case is shown three ways: with the decisive finding present (answer), removed (abstain),
-// and flipped to exclude the original diagnosis (abstain and test evidence sensitivity).
+// Each case is shown in three evidence states: full, ablated, and a contrast that supports an
+// explicit alternative. The target for each state independently specifies diagnosis, certainty,
+// and urgency; arm names never imply that silence is the right answer.
 //
 // Fail-closed, mirroring the ancplua.evaluation engine: the run exits 0 only when every item
 // was scored and the report was written. A requested-but-unavailable model is an ERROR (exit 1),
-// never a silent skip. An optional --gate <recall> also fails the run if any model IN THE RUN has
-// an abstention recall below the threshold — use --only / --no-baselines to point it at one model.
+// never a silent skip. Optional gates enforce coverage, conditional diagnostic accuracy, and
+// urgency accuracy on every selected model; use --only / --no-baselines to select the model at hand.
 
 var opts = Args.Parse(args);
 
@@ -32,37 +33,52 @@ async Task<int> RunBenchAsync(Args o, bool live)
 {
     var dataDir = Bench.FindDataDir(o.DataDir);
     var cases = Bench.LoadCases(dataDir);
+    var grader = new StructuredConceptGrader(new ConceptCatalog(Bench.LoadConcepts(dataDir)));
     var items = Bench.ItemsFor(cases);
-    var prompts = Bench.SelectPrompts(Bench.LoadPrompts(dataDir), o.Prompts);
+    var profileFile = Bench.LoadPromptProfiles(dataDir);
+    var selectedProfiles = Bench.SelectPromptProfiles(profileFile, o.Prompts);
+    var canonicalProfile = profileFile.Prompts.Single(p => p.Canonical);
 
     var available = new List<IModel>();
-    if (!o.NoBaselines) available.AddRange(Bench.CreateReferenceModels(cases));
+    if (!o.NoBaselines)
+        available.AddRange(Bench.CreateReferenceModels(cases));
 
-    // One run per (model, prompt): the system prompt is a controlled variable, so sweeping it is how
-    // you find out how much of an unsupported-answer rate belongs to the prompt and not to the model.
+    // One run per (model, prompt profile). Each profile owns both the system and user messages.
     if (live)
-        available.AddRange(prompts.Select(p => new OllamaModel(o.Model ?? "llama3.2:3b", p)));
+        available.AddRange(selectedProfiles.Select(p => new OllamaModel(o.Model ?? "llama3.2:3b", p)));
 
     var models = Bench.SelectModels(available, o.Only);
     if (models.Count == 0)
         throw new InvalidOperationException(
             "No models selected. --no-baselines removed every model from a 'demo' run — use 'ollama' to add a live model, or drop the flag.");
 
-    var promptNote = live && prompts.Count > 1 ? $" · {prompts.Count} system prompts" : "";
+    var promptNote = live && selectedProfiles.Count > 1 ? $" · {selectedProfiles.Count} prompt profiles" : "";
     Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} models{promptNote}\n");
 
     var cards = new List<Scorecard>();
     var resultsByModel = new Dictionary<string, IReadOnlyList<ItemResult>>();
     foreach (var model in models)
     {
-        var results = await Bench.RunModelAsync(model, items);
+        // Reference policies use the canonical rendered user message for auditable transcripts but
+        // still receive no system message. A live adapter renders its own selected profile.
+        var results = await Bench.RunModelAsync(model, items, canonicalProfile, grader);
         resultsByModel[model.Name] = results;
         cards.Add(Scorecard.From(model.Name, results));
     }
 
     PrintTable(cards, models);
 
-    var report = Report.Build(o.Mode, cases.Count, items.Count, models, resultsByModel, cards, DateTimeOffset.UtcNow, prompts: prompts);
+    var profilesInRun = live ? selectedProfiles : [canonicalProfile];
+    var report = Report.Build(
+        o.Mode,
+        cases.Count,
+        items.Count,
+        models,
+        resultsByModel,
+        cards,
+        DateTimeOffset.UtcNow,
+        grader: grader,
+        prompts: profilesInRun);
     Report.Write(o.OutPath, report);
     Console.WriteLine($"report → {o.OutPath}  ({report.Transcripts.Count} per-item transcripts)");
 
@@ -73,9 +89,9 @@ async Task<int> RunBenchAsync(Args o, bool live)
         Console.WriteLine($"html report → {htmlPath}");
     }
 
-    if (o.Gate is not null || o.GateAnswerAccuracy is not null)
+    if (o.GateCoverage is not null || o.GateSelectiveAccuracy is not null || o.GateUrgencyAccuracy is not null)
     {
-        var gate = Gate.Check(cards, o.Gate, o.GateAnswerAccuracy);
+        var gate = Gate.Check(cards, o.GateCoverage, o.GateSelectiveAccuracy, o.GateUrgencyAccuracy);
         if (!gate.Passed)
         {
             Console.Error.WriteLine($"\nGATE FAILED: {string.Join("; ", gate.Failures)}");
@@ -88,8 +104,9 @@ async Task<int> RunBenchAsync(Args o, bool live)
 
     static string Thresholds(Args o) => string.Join(" and ", new[]
     {
-        o.Gate is { } r ? $"abstention-recall ≥ {r:P0}" : null,
-        o.GateAnswerAccuracy is { } a ? $"answer-accuracy ≥ {a:P0}" : null
+        o.GateCoverage is { } c ? $"coverage ≥ {c:P0}" : null,
+        o.GateSelectiveAccuracy is { } a ? $"selective-accuracy ≥ {a:P0}" : null,
+        o.GateUrgencyAccuracy is { } u ? $"urgency-accuracy ≥ {u:P0}" : null
     }.Where(s => s is not null));
 }
 
@@ -105,34 +122,39 @@ static void PrintTable(IReadOnlyList<Scorecard> cards, IReadOnlyList<IModel> mod
         foreach (var group in new[] { false, true })
         {
             var inGroup = cards.Where(c => isBaseline.GetValueOrDefault(c.ModelName) == group).ToList();
-            if (inGroup.Count == 0) continue;
+            if (inGroup.Count == 0)
+                continue;
             if (group && cards.Any(c => !isBaseline.GetValueOrDefault(c.ModelName)))
                 Console.WriteLine($"{"— baselines (no system prompt) —",-30}");
-            foreach (var c in inGroup) Console.WriteLine(row(c));
+            foreach (var c in inGroup)
+                Console.WriteLine(row(c));
         }
     }
 
-    Console.WriteLine($"{"model",-0}".PadRight(width) + $"{"abstain-recall",14} {"unsupported",14} {"answer-acc",14} {"over-abstain",14} {"selective-acc",14}");
-    Console.WriteLine(new string('─', width + 75));
-    Rows(c => c.ModelName.PadRight(width) + $"{c.AbstentionRecall,14} {c.UnsupportedAnswerRate,14} {c.AnswerAccuracy,14} {c.OverAbstentionRate,14} {c.SelectiveAccuracy,14}");
+    Console.WriteLine($"{"model",-0}".PadRight(width) + $"{"coverage",14} {"selective-acc",14} {"decision-acc",14} {"certainty-acc",14} {"urgency-acc",14} {"undertriage",14}");
+    Console.WriteLine(new string('─', width + 90));
+    Rows(c => c.ModelName.PadRight(width) + $"{c.Coverage,14} {c.SelectiveAccuracy,14} {c.DecisionAccuracy,14} {c.CertaintyAccuracy,14} {c.UrgencyAccuracy,14} {c.UndertriageRate,14}");
 
     Console.WriteLine();
-    Console.WriteLine("abstain-recall: of the must-abstain (ablated) items, how many the model correctly declined.");
-    Console.WriteLine("unsupported:    of the must-abstain items, how many it answered anyway — the failure mode this benchmark targets.");
-    Console.WriteLine("cells are percentages; [low–high] is the 95 % Wilson score interval. At n = 12 these are wide —");
+    Console.WriteLine("coverage:       fraction of full + ablated items on which the model supplied a diagnosis.");
+    Console.WriteLine("selective-acc:  diagnostic accuracy conditional on supplying a diagnosis.");
+    Console.WriteLine("decision-acc:   correct diagnosis or correct diagnostic deferral on full + ablated items.");
+    Console.WriteLine("undertriage:    urgency lower than the evidence-state target, scored independently of diagnosis.");
+    Console.WriteLine("cells are percentages; [low–high] is the 95 % Wilson score interval. With this small set they are wide —");
     Console.WriteLine("overlapping intervals mean the models are not distinguishable, however far apart the point estimates look.");
 
-    if (cards.All(c => c.CounterfactualTotal == 0)) return;
+    if (cards.All(c => c.ContrastTotal == 0))
+        return;
 
     Console.WriteLine();
-    Console.WriteLine("COUNTERFACTUAL PROBE — the decisive finding is flipped so it EXCLUDES the original diagnosis.");
-    Console.WriteLine($"{"model",-0}".PadRight(width) + $"{"evidence-sens",14} {"said-excluded",14} {"abstained",14}");
-    Console.WriteLine(new string('─', width + 45));
-    Rows(c => c.ModelName.PadRight(width) + $"{c.EvidenceSensitivity,14} {c.EvidenceInsensitivityRate,14} {new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal),14}");
+    Console.WriteLine("CONTRAST ARM — changed evidence supports an explicit alternative target.");
+    Console.WriteLine($"{"model",-0}".PadRight(width) + $"{"contrast-acc",14} {"orig-persists",14} {"paired-revise",14} {"certainty-acc",14} {"urgency-acc",14} {"undertriage",14}");
+    Console.WriteLine(new string('─', width + 90));
+    Rows(c => c.ModelName.PadRight(width) + $"{c.ContrastAccuracy,14} {c.OriginalTargetPersistence,14} {c.PairedRevisionAccuracy,14} {c.ContrastCertaintyAccuracy,14} {c.ContrastUrgencyAccuracy,14} {c.ContrastUndertriageRate,14}");
 
     Console.WriteLine();
-    Console.WriteLine("said-excluded:  it named the diagnosis the flipped finding rules out — so it cannot have read the finding.");
-    Console.WriteLine("This is a probe, not part of selective-accuracy: it is trivially maxed by a model that answers nothing.");
+    Console.WriteLine("orig-persists:  response still names the original concept after the evidence supports another target.");
+    Console.WriteLine("paired-revise:  correct on both states, using a contrast concept not supported by the full state.");
 }
 
 static int Usage(string? unknownMode = null)
@@ -149,27 +171,29 @@ static int Usage(string? unknownMode = null)
 
         flags:
           --data  <dir>          path to the data/ folder (auto-detected by default)
-          --gate  <0..1>         fail the run if ANY model in it has abstention recall below this.
-                                 Combine with --only / --no-baselines: AlwaysAnswerBaseline has 0 %
-                                 recall by construction, so an unfiltered run can never pass a gate.
-          --gate-answer-acc <0..1>  fail the run if ANY model's answer accuracy is below this.
-                                 Pair it with --gate: abstention recall alone is maximised by a model
-                                 that NEVER answers (see AlwaysAbstainBaseline), so a recall-only gate
-                                 is passed by a model that has simply learned to say nothing.
+          --gate-coverage <0..1> fail if any selected model answers fewer than this fraction of the
+                                 primary full + ablated items.
+          --gate-selective-acc <0..1>
+                                 fail if conditional diagnostic accuracy among answered primary
+                                 items is below this. Pair with coverage so selective accuracy cannot
+                                 be inflated by answering only a tiny easy subset.
+          --gate-urgency-acc <0..1>
+                                 optional independent floor for exact urgency classification.
           --only  <name>         run only this model (repeatable; case-insensitive; unknown = error)
-          --prompt <name|all>    system prompt from data/prompts.json (repeatable; 'all' sweeps every
-                                 one). Abstention is prompt-sensitive, so a rate measured under one
-                                 prompt is a claim about that PROMPT-AND-MODEL PAIR, not the model.
-                                 The baselines never see a system prompt and are unaffected.
+          --prompt <name|all>    complete prompt profile from data/prompts.json (repeatable; 'all'
+                                 sweeps every profile). A profile controls both system and user
+                                 messages. The canonical default is evidence-required; forced-choice
+                                 is a noncanonical stress arm. Reference policies use the canonical
+                                 user template but never receive a system message.
           --no-baselines         drop the programmatic reference policies from the run
           --out   <file>         report path (default: report.json)
           --html  <file>         also write a self-contained HTML report
           --model <name>         ollama model tag (default: llama3.2:3b)
 
         examples:
-          dotnet run -- demo --only LabelOracleBaseline --gate 0.9 --gate-answer-acc 0.9
-          dotnet run -- ollama --model llama3.2:3b --no-baselines --gate 0.9 --gate-answer-acc 0.9
-          dotnet run -- ollama --prompt all --no-baselines   # how much of the rate is the prompt?
+          dotnet run -- demo --only LabelOracleBaseline --gate-coverage 0.5 --gate-selective-acc 0.9
+          dotnet run -- ollama --model llama3.2:3b --no-baselines --gate-coverage 0.5 --gate-selective-acc 0.9
+          dotnet run -- ollama --prompt all --no-baselines   # compare canonical vs forced choice
         """);
     return unknownMode is null ? 0 : 1;
 }
@@ -178,8 +202,9 @@ static int Usage(string? unknownMode = null)
 file sealed record Args(
     string Mode,
     string? DataDir,
-    double? Gate,
-    double? GateAnswerAccuracy,
+    double? GateCoverage,
+    double? GateSelectiveAccuracy,
+    double? GateUrgencyAccuracy,
     string OutPath,
     string? HtmlPath,
     string? Model,
@@ -191,8 +216,9 @@ file sealed record Args(
     {
         var mode = argv.FirstOrDefault(a => !a.StartsWith('-'))?.ToLowerInvariant() ?? "demo";
         string? dataDir = null;
-        double? gate = null;
-        double? gateAnswerAccuracy = null;
+        double? gateCoverage = null;
+        double? gateSelectiveAccuracy = null;
+        double? gateUrgencyAccuracy = null;
         var outPath = "report.json";
         string? htmlPath = null;
         string? model = null;
@@ -204,21 +230,52 @@ file sealed record Args(
         {
             switch (argv[i])
             {
-                case "--data" when i + 1 < argv.Length: dataDir = argv[++i]; break;
-                case "--out" when i + 1 < argv.Length: outPath = argv[++i]; break;
-                case "--html" when i + 1 < argv.Length: htmlPath = argv[++i]; break;
-                case "--model" when i + 1 < argv.Length: model = argv[++i]; break;
-                case "--only" when i + 1 < argv.Length: only.Add(argv[++i]); break;
-                case "--prompt" when i + 1 < argv.Length: prompts.Add(argv[++i]); break;
-                case "--no-baselines": noBaselines = true; break;
-                case "--gate" when i + 1 < argv.Length
+                case "--data" when i + 1 < argv.Length:
+                    dataDir = argv[++i];
+                    break;
+                case "--out" when i + 1 < argv.Length:
+                    outPath = argv[++i];
+                    break;
+                case "--html" when i + 1 < argv.Length:
+                    htmlPath = argv[++i];
+                    break;
+                case "--model" when i + 1 < argv.Length:
+                    model = argv[++i];
+                    break;
+                case "--only" when i + 1 < argv.Length:
+                    only.Add(argv[++i]);
+                    break;
+                case "--prompt" when i + 1 < argv.Length:
+                    prompts.Add(argv[++i]);
+                    break;
+                case "--no-baselines":
+                    noBaselines = true;
+                    break;
+                case "--gate-coverage" when i + 1 < argv.Length
                     && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var g):
-                    gate = g; break;
-                case "--gate-answer-acc" when i + 1 < argv.Length
+                    gateCoverage = g;
+                    break;
+                case "--gate-selective-acc" when i + 1 < argv.Length
                     && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var a):
-                    gateAnswerAccuracy = a; break;
+                    gateSelectiveAccuracy = a;
+                    break;
+                case "--gate-urgency-acc" when i + 1 < argv.Length
+                    && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var u):
+                    gateUrgencyAccuracy = u;
+                    break;
             }
         }
-        return new Args(mode, dataDir, gate, gateAnswerAccuracy, outPath, htmlPath, model, only, noBaselines, prompts);
+        return new Args(
+            mode,
+            dataDir,
+            gateCoverage,
+            gateSelectiveAccuracy,
+            gateUrgencyAccuracy,
+            outPath,
+            htmlPath,
+            model,
+            only,
+            noBaselines,
+            prompts);
     }
 }

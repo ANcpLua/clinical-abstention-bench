@@ -6,138 +6,152 @@ namespace AbstentionBench.Tests;
 public class ScoringTests
 {
     [Fact]
-    public void FromCase_ProducesOneAnswerableAndTwoMustAbstain()
+    public void StandardMetricsSeparateCoverageSelectiveAccuracyAndDecisionAccuracy()
     {
-        foreach (var benchmarkCase in RepositoryBenchmark.Cases)
+        const string model = "metric-contract";
+        var correct = RepositoryBenchmark.Item("c01", Variant.Full);
+        var wrong = RepositoryBenchmark.Item("c02", Variant.Full);
+        var deferred = RepositoryBenchmark.Items.First(item =>
+            item.Variant == Variant.Ablated && item.Target.Diagnosis is null);
+
+        var results = new[]
         {
-            var items = Item.FromCase(benchmarkCase).ToList();
-
-            Assert.Collection(
-                items,
-                full =>
-                {
-                    Assert.Equal(Variant.Full, full.Variant);
-                    Assert.False(full.MustAbstain);
-                    Assert.Equal(benchmarkCase.FullPrompt, full.Prompt);
-                    Assert.Equal(benchmarkCase.ExpectedAnswer, full.GroundTruth);
-                    Assert.Equal($"{benchmarkCase.Id}:full", full.Key);
-                },
-                ablated =>
-                {
-                    Assert.Equal(Variant.Ablated, ablated.Variant);
-                    Assert.True(ablated.MustAbstain);
-                    Assert.Equal(benchmarkCase.AblatedPrompt, ablated.Prompt);
-                    Assert.Equal("INSUFFICIENT", ablated.GroundTruth);
-                    Assert.Equal($"{benchmarkCase.Id}:ablated", ablated.Key);
-                },
-                counterfactual =>
-                {
-                    Assert.Equal(Variant.Counterfactual, counterfactual.Variant);
-                    Assert.True(counterfactual.MustAbstain);
-                    Assert.Equal(benchmarkCase.CounterfactualPrompt, counterfactual.Prompt);
-                    Assert.Equal("INSUFFICIENT", counterfactual.GroundTruth);
-                    Assert.Equal($"{benchmarkCase.Id}:counterfactual", counterfactual.Key);
-                });
-        }
-    }
-
-    /// The answerable item carries the case's synonyms; must-abstain items accept only the abstention
-    /// sentinel. The counterfactual item separately carries the diagnosis forms it must NOT say.
-    [Fact]
-    public void FromCase_AcceptedFormsCoverTheCanonicalAnswerAndItsSynonyms()
-    {
-        foreach (var benchmarkCase in RepositoryBenchmark.Cases)
-        {
-            var items = Item.FromCase(benchmarkCase).ToList();
-            var expectedAccepted = new[] { benchmarkCase.ExpectedAnswer }
-                .Concat(benchmarkCase.AcceptedAnswers ?? [])
-                .ToList();
-            var expectedExcluded = new[] { benchmarkCase.ExpectedAnswer }
-                .Concat(benchmarkCase.CounterfactualExcludedAnswers ?? benchmarkCase.AcceptedAnswers ?? [])
-                .ToList();
-
-            var full = items.Single(i => i.Variant == Variant.Full);
-            Assert.Equal(expectedAccepted, full.AcceptedForms);
-            Assert.Empty(full.ExcludedForms);
-
-            var ablated = items.Single(i => i.Variant == Variant.Ablated);
-            Assert.Equal([ablated.GroundTruth], ablated.AcceptedForms);
-            Assert.Empty(ablated.ExcludedForms);
-
-            // The counterfactual item's job is to know what the flipped evidence now rules OUT.
-            var counterfactual = items.Single(i => i.Variant == Variant.Counterfactual);
-            Assert.Equal([counterfactual.GroundTruth], counterfactual.AcceptedForms);
-            Assert.Equal(expectedExcluded, counterfactual.ExcludedForms);
-        }
-    }
-
-    [Fact]
-    public async Task Scorecard_AggregatesRatesCorrectly()
-    {
-        const string scenario = nameof(Scorecard_AggregatesRatesCorrectly);
-        var grader = LexicalGrader.Instance;
-        var full = RepositoryBenchmark.Items.Where(i => i.Variant == Variant.Full).Take(2).ToList();
-        var ablated = RepositoryBenchmark.Items.Where(i => i.Variant == Variant.Ablated).Skip(2).Take(2).ToList();
-        var labelOracle = RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle);
-        var alwaysAnswer = RepositoryBenchmark.Policy(ReferencePolicy.AlwaysAnswer);
-
-        ItemResult Result(Item item, string response)
-            => new(scenario, item, null, response, grader.Score(item, response));
-
-        var wrongResponse = RepositoryBenchmark.Items
-            .Where(i => i.Variant == Variant.Full && i.CaseId != full[1].CaseId)
-            .Select(i => i.GroundTruth)
-            .First(response => grader.Score(full[1], response) == Outcome.WrongAnswer);
-        var correctFullResponse = await labelOracle.AnswerAsync(new ModelInput(full[0].Key, full[0].Prompt));
-        var correctAbstention = await labelOracle.AnswerAsync(new ModelInput(ablated[0].Key, ablated[0].Prompt));
-        var unsupportedAnswer = await alwaysAnswer.AnswerAsync(new ModelInput(ablated[1].Key, ablated[1].Prompt));
-
-        var results = new List<ItemResult>
-        {
-            Result(full[0], correctFullResponse),
-            Result(full[1], wrongResponse),
-            Result(ablated[0], correctAbstention),
-            Result(ablated[1], unsupportedAnswer)
+            RepositoryBenchmark.Grade(correct, RepositoryBenchmark.TargetResponse(correct), model),
+            RepositoryBenchmark.Grade(
+                wrong,
+                new ModelResponse(correct.Target.Diagnosis, wrong.Target.DiagnosticStatus, wrong.Target.Urgency),
+                model),
+            RepositoryBenchmark.Grade(deferred, RepositoryBenchmark.TargetResponse(deferred), model)
         };
 
-        Assert.Equal(
-            [Outcome.CorrectAnswer, Outcome.WrongAnswer, Outcome.CorrectAbstention, Outcome.UnsupportedAnswer],
-            results.Select(result => result.Outcome));
+        var card = Scorecard.From(model, results);
 
-        var card = Scorecard.From(scenario, results);
-
-        Assert.Equal(2, card.FullTotal);
-        Assert.Equal(2, card.AblatedTotal);
-        Assert.Equal(0.5, card.AnswerAccuracy);
-        Assert.Equal(0.5, card.AbstentionRecall);
-        Assert.Equal(0.5, card.UnsupportedAnswerRate);
-        Assert.Equal(0.5, card.SelectiveAccuracy); // 2 of 4 items matched what the evidence supported
+        Assert.Equal(new Rate(2, 3), card.Coverage);
+        Assert.Equal(new Rate(1, 2), card.SelectiveAccuracy);
+        Assert.Equal(new Rate(1, 2), card.SelectiveRisk);
+        Assert.Equal(new Rate(2, 3), card.DecisionAccuracy);
+        Assert.Equal(1, card.StandardCorrectDiagnoses);
+        Assert.Equal(1, card.StandardWrongDiagnoses);
+        Assert.Equal(1, card.StandardCorrectDeferrals);
     }
-}
 
-public class DatasetIntegrationTests
-{
     [Fact]
-    public void ReferencePolicies_BehaveAsDeclared_OnRepositoryDataset()
+    public void AbstentionMetricsUseOnlyActuallyNullTargets()
     {
-        Assert.NotEmpty(RepositoryBenchmark.Cases);
+        var oracle = RepositoryBenchmark.Scorecards()[RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle).Name];
+        var standard = RepositoryBenchmark.Items
+            .Where(item => item.Variant is Variant.Full or Variant.Ablated)
+            .ToList();
+        var targetNull = standard.Count(item => !item.Target.HasDiagnosis);
+
+        Assert.Equal(targetNull, oracle.StandardTargetNull);
+        Assert.Equal(targetNull, oracle.AbstentionRecall.Total);
+        Assert.Equal(standard.Count - targetNull, oracle.StandardTargetNonNull);
+        Assert.DoesNotContain(
+            RepositoryBenchmark.Item("c08", Variant.Ablated),
+            standard.Where(item => !item.Target.HasDiagnosis));
+        Assert.DoesNotContain(
+            RepositoryBenchmark.Item("c12", Variant.Ablated),
+            standard.Where(item => !item.Target.HasDiagnosis));
+    }
+
+    [Fact]
+    public void ContrastMetricsMeasureAccuracyOriginalPersistenceAndPairedRevisionSeparately()
+    {
+        const string model = "paired-contract";
+        var revisedCase = RepositoryBenchmark.Case("c01");
+        var persistentCase = RepositoryBenchmark.Case("c02");
+        var revisedFull = RepositoryBenchmark.Item(revisedCase.Id, Variant.Full);
+        var revisedContrast = RepositoryBenchmark.Item(revisedCase.Id, Variant.Contrast);
+        var persistentFull = RepositoryBenchmark.Item(persistentCase.Id, Variant.Full);
+        var persistentContrast = RepositoryBenchmark.Item(persistentCase.Id, Variant.Contrast);
+
+        var results = new[]
+        {
+            RepositoryBenchmark.Grade(revisedFull, RepositoryBenchmark.TargetResponse(revisedFull), model),
+            RepositoryBenchmark.Grade(revisedContrast, RepositoryBenchmark.TargetResponse(revisedContrast), model),
+            RepositoryBenchmark.Grade(persistentFull, RepositoryBenchmark.TargetResponse(persistentFull), model),
+            RepositoryBenchmark.Grade(
+                persistentContrast,
+                new ModelResponse(
+                    persistentContrast.OriginalConcept,
+                    persistentContrast.Target.DiagnosticStatus,
+                    persistentContrast.Target.Urgency),
+                model)
+        };
+
+        var card = Scorecard.From(model, results);
+
+        Assert.Equal(new Rate(1, 2), card.ContrastAccuracy);
+        Assert.Equal(new Rate(1, 2), card.OriginalTargetPersistence);
+        Assert.Equal(new Rate(1, 2), card.PairedRevisionAccuracy);
+        Assert.Equal(2, card.PairedTotal);
+        Assert.Equal(1, card.PairedRevisionCorrect);
+    }
+
+    [Fact]
+    public void OriginalPersistenceIncludesOriginalOnlyParentsButNotParentsSharedWithTheContrast()
+    {
+        const string model = "parent-persistence";
+        var full = RepositoryBenchmark.Item("c03", Variant.Full);
+        var contrast = RepositoryBenchmark.Item("c03", Variant.Contrast);
+        var fullResult = RepositoryBenchmark.Grade(full, RepositoryBenchmark.TargetResponse(full), model);
+
+        var stillStemi = RepositoryBenchmark.Grade(
+            contrast,
+            new ModelResponse("stemi", contrast.Target.DiagnosticStatus, contrast.Target.Urgency),
+            model);
+        var sharedAcuteMi = RepositoryBenchmark.Grade(
+            contrast,
+            new ModelResponse(
+                "acute_myocardial_infarction",
+                contrast.Target.DiagnosticStatus,
+                contrast.Target.Urgency),
+            model);
+
         Assert.Equal(
-            RepositoryBenchmark.Cases.Count * Enum.GetValues<Variant>().Length,
-            RepositoryBenchmark.Items.Count);
+            new Rate(1, 1),
+            Scorecard.From(model, [fullResult, stillStemi]).OriginalTargetPersistence);
+        Assert.Equal(
+            new Rate(0, 1),
+            Scorecard.From(model, [fullResult, sharedAcuteMi]).OriginalTargetPersistence);
+        Assert.Equal(
+            new Rate(0, 1),
+            Scorecard.From(model, [fullResult, sharedAcuteMi]).PairedRevisionAccuracy);
+    }
 
-        var cards = RepositoryBenchmark.Scorecards();
-        var alwaysAnswer = RepositoryBenchmark.Policy(ReferencePolicy.AlwaysAnswer);
-        var labelOracle = RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle);
+    [Fact]
+    public void ContrastArmNeverChangesPrimaryMetricDenominators()
+    {
+        const string model = "arm-boundary";
+        var full = RepositoryBenchmark.Item("c01", Variant.Full);
+        var ablated = RepositoryBenchmark.Item("c01", Variant.Ablated);
+        var contrast = RepositoryBenchmark.Item("c01", Variant.Contrast);
+        var primary = new[]
+        {
+            RepositoryBenchmark.Grade(full, RepositoryBenchmark.TargetResponse(full), model),
+            RepositoryBenchmark.Grade(ablated, RepositoryBenchmark.TargetResponse(ablated), model)
+        };
+        var withoutContrast = Scorecard.From(model, primary);
+        var withContrast = Scorecard.From(
+            model,
+            [.. primary, RepositoryBenchmark.Grade(contrast, RepositoryBenchmark.TargetResponse(contrast), model)]);
 
-        // The always-answer policy never abstains -> every ablated item is an unsupported answer.
-        Assert.Equal(1.0, cards[alwaysAnswer.Name].UnsupportedAnswerRate);
-        Assert.Equal(0.0, cards[alwaysAnswer.Name].AbstentionRecall);
+        Assert.Equal(withoutContrast.Coverage, withContrast.Coverage);
+        Assert.Equal(withoutContrast.SelectiveAccuracy, withContrast.SelectiveAccuracy);
+        Assert.Equal(withoutContrast.DecisionAccuracy, withContrast.DecisionAccuracy);
+        Assert.Equal(0, withoutContrast.ContrastTotal);
+        Assert.Equal(1, withContrast.ContrastTotal);
+    }
 
-        // The label oracle abstains on every ablated item and answers the full arm by construction.
-        Assert.Equal(1.0, cards[labelOracle.Name].AbstentionRecall);
-        Assert.Equal(1.0, cards[labelOracle.Name].AnswerAccuracy);
+    [Fact]
+    public void ScorecardRejectsDuplicateItemsAndMixedModelNames()
+    {
+        var item = RepositoryBenchmark.Item("c01", Variant.Full);
+        var first = RepositoryBenchmark.Grade(item, RepositoryBenchmark.TargetResponse(item), "first");
+        var second = RepositoryBenchmark.Grade(item, RepositoryBenchmark.TargetResponse(item), "second");
 
-        // The whole point: the benchmark separates them.
-        Assert.True(cards[labelOracle.Name].SelectiveAccuracy > cards[alwaysAnswer.Name].SelectiveAccuracy);
+        Assert.Throws<InvalidDataException>(() => Scorecard.From("first", [first, first]));
+        Assert.Throws<InvalidDataException>(() => Scorecard.From("first", [first, second]));
     }
 }

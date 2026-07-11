@@ -4,9 +4,7 @@ using System.Text;
 
 namespace ClinicalAbstentionBench;
 
-/// Renders the scorecards as a single self-contained dark-themed HTML page —
-/// the benchmark's real output, suitable for sharing or screenshotting.
-/// Deliberately dependency-free: inline CSS, no scripts, no CDN.
+/// Dependency-free HTML rendering of the structured v2 scorecard.
 public static class ScorecardPage
 {
     public static string Render(
@@ -16,22 +14,27 @@ public static class ScorecardPage
         BenchCase example,
         IReadOnlySet<string> baselineNames)
     {
-        var rows = new StringBuilder();
-        foreach (var c in cards.OrderByDescending(c => c.SelectiveAccuracy.Value))
-        {
-            rows.AppendLine($"""
-                <tr class="{RowClass(c, baselineNames)}">
-                  <td class="model">{E(c.ModelName)}{BaselineTag(c, baselineNames)}</td>
-                  <td>{Cell(c.AbstentionRecall)}</td>
-                  <td class="unsupported">{Cell(c.UnsupportedAnswerRate)}</td>
-                  <td>{Cell(c.AnswerAccuracy)}</td>
-                  <td>{Cell(c.OverAbstentionRate)}</td>
-                  <td class="selective">{Cell(c.SelectiveAccuracy)}</td>
-                </tr>
-                """);
-        }
+        var primaryRows = Rows(
+            cards.OrderByDescending(card => card.DecisionAccuracy.Value),
+            baselineNames,
+            card =>
+                $"<td>{Cell(card.Coverage)}</td>" +
+                $"<td class=\"good\">{Cell(card.SelectiveAccuracy)}</td>" +
+                $"<td class=\"good\">{Cell(card.DecisionAccuracy)}</td>" +
+                $"<td>{Cell(card.CertaintyAccuracy)}</td>" +
+                $"<td>{Cell(card.UrgencyAccuracy)}</td>" +
+                $"<td class=\"bad\">{Cell(card.UndertriageRate)}</td>");
 
-        var probe = Probe(cards, baselineNames);
+        var contrastRows = Rows(
+            cards.OrderByDescending(card => card.PairedRevisionAccuracy.Value),
+            baselineNames,
+            card =>
+                $"<td class=\"good\">{Cell(card.ContrastAccuracy)}</td>" +
+                $"<td class=\"bad\">{Cell(card.OriginalTargetPersistence)}</td>" +
+                $"<td class=\"good\">{Cell(card.PairedRevisionAccuracy)}</td>" +
+                $"<td>{Cell(card.ContrastCertaintyAccuracy)}</td>" +
+                $"<td>{Cell(card.ContrastUrgencyAccuracy)}</td>" +
+                $"<td class=\"bad\">{Cell(card.ContrastUndertriageRate)}</td>");
 
         return $$"""
             <!doctype html>
@@ -40,117 +43,103 @@ public static class ScorecardPage
             <meta charset="utf-8">
             <title>clinical-abstention-bench report</title>
             <style>
-              :root { color-scheme: dark; }
-              body { background:#0b0f14; color:#e6edf3; font:16px/1.55 -apple-system,'Segoe UI',sans-serif;
-                     max-width:880px; margin:0 auto; padding:48px 32px; }
-              h1 { font-size:28px; margin:0; letter-spacing:-.02em; }
-              p.tag { color:#9aa7b4; margin:6px 0 28px; }
-              .counts { color:#9aa7b4; font-size:13px; margin-bottom:10px; text-transform:uppercase; letter-spacing:.08em; }
-              table { border-collapse:collapse; width:100%; margin:8px 0 34px; }
-              th,td { text-align:right; padding:10px 14px; border-bottom:1px solid #1c2530; font-variant-numeric:tabular-nums; }
-              th { color:#9aa7b4; font-size:12px; text-transform:uppercase; letter-spacing:.06em; font-weight:600; }
-              td.model, th.model { text-align:left; font-weight:600; }
-              td.unsupported { color:#ff6b6b; font-weight:700; }
-              td.selective { color:#51cf66; font-weight:700; }
-              th.unsupported-h { color:#ff6b6b; }
-              .note { color:#9aa7b4; font-size:13px; }
-              .ci { display:block; color:#7d8894; font-size:11px; font-weight:400; margin-top:2px; }
-              td.unsupported .ci, td.selective .ci { color:#7d8894; }
-              tr.baseline td { opacity:.62; }
-              tr.live td.model { border-left:3px solid #4c8dff; padding-left:11px; }
-              .tagline { display:block; color:#7d8894; font-size:11px; font-weight:400; margin-top:2px; }
-              .triple { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:10px; }
-              .card { background:#111823; border:1px solid #1c2530; border-radius:10px; padding:16px 18px; font-size:14px; }
-              .card h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
-              .full h3 { color:#51cf66; } .ablated h3 { color:#ff6b6b; } .counterfactual h3 { color:#ffa94d; }
-              .ans { margin-top:10px; font-weight:700; }
-              .full .ans { color:#51cf66; } .ablated .ans { color:#ff6b6b; } .counterfactual .ans { color:#ffa94d; }
-              .ans small { display:block; margin-top:6px; font-weight:400; color:#9aa7b4; font-size:12px; }
-              h2 { font-size:16px; margin:28px 0 4px; }
+              :root { color-scheme:dark; }
+              body { background:#0b0f14; color:#e6edf3; font:15px/1.5 -apple-system,'Segoe UI',sans-serif;
+                     max-width:1080px; margin:0 auto; padding:44px 28px; }
+              h1 { margin:0; font-size:28px; } h2 { margin:34px 0 8px; font-size:18px; }
+              .tag,.note,.counts { color:#9aa7b4; } .counts { font-size:12px; letter-spacing:.08em;
+                     text-transform:uppercase; margin:24px 0 8px; }
+              table { border-collapse:collapse; width:100%; margin:8px 0 18px; }
+              th,td { text-align:right; padding:9px 11px; border-bottom:1px solid #1c2530;
+                      font-variant-numeric:tabular-nums; }
+              th { color:#9aa7b4; font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
+              th:first-child,td:first-child { text-align:left; }
+              td:first-child { font-weight:600; } .good { color:#51cf66; } .bad { color:#ff6b6b; }
+              .ci { display:block; color:#7d8894; font-size:10px; }
+              tr.baseline td { opacity:.64; } tr.live td:first-child { border-left:3px solid #4c8dff; }
+              .kind { display:block; color:#7d8894; font-size:10px; font-weight:400; }
+              .variants { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; }
+              .card { background:#111823; border:1px solid #1c2530; border-radius:9px; padding:15px; }
+              .card h3 { margin:0 0 8px; color:#9aa7b4; font-size:11px; letter-spacing:.06em;
+                         text-transform:uppercase; }
+              .target { margin-top:12px; color:#51cf66; font-weight:600; }
+              code { color:#d0d7de; }
             </style>
             </head>
             <body>
               <h1>clinical-abstention-bench</h1>
-              <p class="tag">Selective prediction on clinical vignettes — does the model abstain when the evidence is insufficient, rather than only scoring accuracy?</p>
+              <p class="tag">Structured diagnosis, certainty, and urgency under changing clinical evidence.</p>
               <div class="counts">{{caseCount}} cases · {{itemCount}} items · {{cards.Count}} models</div>
               <table>
-                <thead><tr>
-                  <th class="model">model</th><th>abstain-recall</th><th class="unsupported-h">unsupported</th>
-                  <th>answer-acc</th><th>over-abstain</th><th>selective-acc</th>
-                </tr></thead>
-                <tbody>
-            {{rows}}
-                </tbody>
+                <thead><tr><th>model</th><th>coverage</th><th>selective acc</th><th>decision acc</th>
+                  <th>certainty acc</th><th>urgency acc</th><th>undertriage</th></tr></thead>
+                <tbody>{{primaryRows}}</tbody>
               </table>
-              <p class="note">unsupported — of the items where the decisive finding was removed, the fraction the model answered anyway. This is the failure mode the benchmark targets.</p>
-              <p class="note">Brackets are the <strong>95 % Wilson score interval</strong>. With {{caseCount}} cases they are wide: where two models' intervals overlap, this benchmark cannot tell them apart, however far apart the headline percentages look.</p>
-              <p class="note">Dimmed rows are deterministic <strong>reference policies</strong>. They never see a system prompt; provenance declares any label access, and the label oracle is perfect by construction. They are analytical reference points rather than competitors.</p>
-              <p class="note">A live model's row is named <code>model @ prompt</code>. Abstention is <strong>prompt-sensitive</strong>: a rate measured under one system prompt is a claim about that prompt-and-model pair, not about the model. Sweep them with <code>--prompt all</code>.</p>
-            {{probe}}
-              <h2>How a case works — {{E(example.Condition)}}</h2>
-              <div class="triple">
-                <div class="card full"><h3>full — decisive finding present</h3>{{E(example.FullPrompt)}}<div class="ans">→ answer: {{E(example.ExpectedAnswer)}}</div></div>
-                <div class="card ablated"><h3>ablated — {{E(example.RemovedFact)}} removed</h3>{{E(example.AblatedPrompt)}}<div class="ans">→ supported reply: INSUFFICIENT</div></div>
-                <div class="card counterfactual"><h3>counterfactual — that finding flipped</h3>{{E(example.CounterfactualPrompt)}}<div class="ans">→ supported reply: INSUFFICIENT<br><small>saying “{{E(example.ExpectedAnswer)}}” here means the finding was never read</small></div></div>
+              <p class="note"><strong>Selective accuracy</strong> is diagnostic accuracy among answered
+              full + ablated items; read it with coverage. Decision accuracy additionally credits a correct
+              diagnostic deferral. Diagnosis and urgency are scored independently.</p>
+
+              <h2>Alternative-supported contrast</h2>
+              <table>
+                <thead><tr><th>model</th><th>contrast acc</th><th>original persists</th><th>paired revision</th>
+                  <th>certainty acc</th><th>urgency acc</th><th>undertriage</th></tr></thead>
+                <tbody>{{contrastRows}}</tbody>
+              </table>
+              <p class="note">Contrasts support a determinate alternative. Silence and arbitrary alternatives
+              no longer count as evidence sensitivity: paired revision requires both diagnoses to be correct and
+              the contrast concept not to be supported by the full state.</p>
+
+              <h2>Example — {{E(example.Condition)}}</h2>
+              <div class="variants">
+                {{VariantCard("full", example.Full)}}
+                {{VariantCard("ablated", example.Ablated)}}
+                {{VariantCard("contrast", example.Contrast)}}
               </div>
+              <p class="note">Rates include 95% Wilson intervals. Dimmed rows are deterministic reference
+              policies generated from benchmark targets; they are controls, not model competitors.</p>
             </body>
             </html>
             """;
     }
 
-    /// The counterfactual arm gets its own table, deliberately. It is a probe — "did the model read
-    /// the decisive finding?" — and not part of selective accuracy, because like abstention-recall it
-    /// is trivially maximised by a model that answers nothing.
-    private static string Probe(IReadOnlyList<Scorecard> cards, IReadOnlySet<string> baselineNames)
+    private static string Rows(
+        IEnumerable<Scorecard> cards,
+        IReadOnlySet<string> baselineNames,
+        Func<Scorecard, string> cells)
     {
-        if (cards.All(c => c.CounterfactualTotal == 0)) return "";
-
         var rows = new StringBuilder();
-        foreach (var c in cards.OrderByDescending(c => c.EvidenceSensitivity.Value))
+        foreach (var card in cards)
         {
-            rows.AppendLine($"""
-                <tr class="{RowClass(c, baselineNames)}">
-                  <td class="model">{E(c.ModelName)}{BaselineTag(c, baselineNames)}</td>
-                  <td class="selective">{Cell(c.EvidenceSensitivity)}</td>
-                  <td class="unsupported">{Cell(c.EvidenceInsensitivityRate)}</td>
-                  <td>{Cell(new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal))}</td>
-                </tr>
-                """);
+            var baseline = baselineNames.Contains(card.ModelName);
+            var kind = baseline
+                ? "<span class=\"kind\">programmatic reference · no system prompt</span>"
+                : "";
+            rows.Append($"<tr class=\"{(baseline ? "baseline" : "live")}\"><td>{E(card.ModelName)}{kind}</td>");
+            rows.Append(cells(card));
+            rows.AppendLine("</tr>");
         }
+        return rows.ToString();
+    }
 
+    private static string VariantCard(string label, CaseVariant variant)
+    {
+        var diagnosis = variant.Target.Diagnosis is null ? "diagnostic deferral" : E(variant.Target.Diagnosis);
         return $"""
-              <h2>Counterfactual probe — did the model read the finding at all?</h2>
-              <p class="note">The decisive finding is not removed here; it is <strong>flipped</strong>, so that it now
-              <em>excludes</em> the original diagnosis. A model that names that diagnosis anyway cannot have read the
-              finding — the finding says no. This is what separates a model that reads the evidence and is overconfident
-              from one that pattern-matches the shape of the vignette; on the scorecard above, those two are identical.</p>
-              <table>
-                <thead><tr>
-                  <th class="model">model</th><th>evidence-sensitivity</th>
-                  <th class="unsupported-h">said the excluded diagnosis</th><th>abstained</th>
-                </tr></thead>
-                <tbody>
-            {rows}    </tbody>
-              </table>
-              <p class="note">Not folded into selective-accuracy: like abstention-recall, this is trivially maximised by a model that answers nothing.</p>
+            <div class="card"><h3>{E(label)}</h3>
+              {E(variant.Vignette)}
+              <div class="target">→ {diagnosis} · {E(variant.Target.DiagnosticStatus.WireName())}
+              · {E(variant.Target.Urgency.WireName())}</div>
+            </div>
             """;
     }
 
-    /// Baseline rows are dimmed and tagged. They are deterministic, programmatic policies that never
-    /// see a system prompt, so the page must not present them as like-for-like competitors.
-    private static string RowClass(Scorecard c, IReadOnlySet<string> baselineNames)
-        => baselineNames.Contains(c.ModelName) ? "baseline" : "live";
+    private static string Cell(Rate rate)
+        => rate.Total == 0
+            ? "n/a"
+            : $"{Percent(rate.Value)}<span class=\"ci\">[{Percent(rate.Lower)}–{Percent(rate.Upper)}]</span>";
 
-    private static string BaselineTag(Scorecard c, IReadOnlySet<string> baselineNames)
-        => baselineNames.Contains(c.ModelName) ? """<span class="tagline">programmatic reference · no system prompt</span>""" : "";
+    private static string Percent(double value)
+        => Math.Round(value * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
 
-    /// A rate is never shown without its interval. At n = 12 the point estimate on its own is the
-    /// most misleading thing this page could print.
-    private static string Cell(Rate r)
-        => $"""{Pct(r.Value)}<span class="ci">[{Pct(r.Lower)}–{Pct(r.Upper)}]</span>""";
-
-    private static string Pct(double v)
-        => Math.Round(v * 100).ToString("0", CultureInfo.InvariantCulture) + " %";
-
-    private static string E(string s) => WebUtility.HtmlEncode(s);
+    private static string E(string value) => WebUtility.HtmlEncode(value);
 }

@@ -11,14 +11,14 @@ public class ReportTests
     private static async Task<RunReport> BuildRepositoryRunAsync()
     {
         var models = RepositoryBenchmark.ReferenceModels;
-
-        var resultsByModel = new Dictionary<string, IReadOnlyList<ItemResult>>();
+        var resultsByModel = new Dictionary<string, IReadOnlyList<ItemResult>>(StringComparer.Ordinal);
         var cards = new List<Scorecard>();
-        foreach (var m in models)
+
+        foreach (var model in models)
         {
-            var results = await Bench.RunModelAsync(m, RepositoryBenchmark.Items);
-            resultsByModel[m.Name] = results;
-            cards.Add(Scorecard.From(m.Name, results));
+            var results = await RepositoryBenchmark.Run(model);
+            resultsByModel[model.Name] = results;
+            cards.Add(Scorecard.From(model.Name, results));
         }
 
         return Report.Build(
@@ -28,147 +28,125 @@ public class ReportTests
             models,
             resultsByModel,
             cards,
-            FixedTime);
+            FixedTime,
+            RepositoryBenchmark.Grader,
+            [RepositoryBenchmark.CanonicalProfile]);
     }
 
     [Fact]
-    public async Task Build_EmitsOneTranscriptPerItemPerModel()
+    public async Task ReportContainsOneSelfContainedTranscriptPerModelAndItem()
     {
         var report = await BuildRepositoryRunAsync();
+        var model = RepositoryBenchmark.Policy(ReferencePolicy.AlwaysAnswer);
+        var item = RepositoryBenchmark.Item("c12", Variant.Ablated);
+        var transcript = report.Transcripts.Single(entry =>
+            entry.Model == model.Name && entry.ItemKey == item.Key);
 
         Assert.Equal(report.Items * report.Models.Count, report.Transcripts.Count);
-        Assert.Equal(report.Transcripts.Count, report.Transcripts.Select(t => $"{t.Model}/{t.ItemKey}").Distinct().Count());
-    }
-
-    /// The whole point of the transcript: a reader who doubts a score can see the exact prompt sent
-    /// and the exact reply that produced it, without re-running anything.
-    [Fact]
-    public async Task Build_TranscriptIsSelfContained_PromptResponseAndOutcome()
-    {
-        var model = RepositoryBenchmark.Policy(ReferencePolicy.AlwaysAnswer);
-        var item = RepositoryBenchmark.Items.First(i => i.Variant == Variant.Ablated);
-        var response = await model.AnswerAsync(new ModelInput(item.Key, item.Prompt));
-        var expectedOutcome = LexicalGrader.Instance.Score(item, response);
-
-        var report = await BuildRepositoryRunAsync();
-        var entry = report.Transcripts.Single(t => t.Model == model.Name && t.ItemKey == item.Key);
-
-        Assert.Equal(Outcome.UnsupportedAnswer, expectedOutcome);
-        Assert.Equal(item.CaseId, entry.CaseId);
-        Assert.Equal(item.VariantName, entry.Variant);
-        Assert.Equal(item.Prompt, entry.Prompt);
-        Assert.Equal(response, entry.Response);
-        Assert.Equal(expectedOutcome.ToString(), entry.Outcome);
-        Assert.Equal(item.GroundTruth, entry.SupportedAnswer);
+        Assert.Equal(
+            report.Transcripts.Count,
+            report.Transcripts.Select(entry => $"{entry.Model}/{entry.ItemKey}").Distinct().Count());
+        Assert.Equal(item.Relation.WireName(), transcript.Relation);
+        Assert.Equal(item.OriginalConcept, transcript.OriginalConcept);
+        Assert.Equal(RepositoryBenchmark.CanonicalProfile.RenderUserPrompt(item.Vignette), transcript.SentPrompt);
+        Assert.Equal(item.Target.Diagnosis, transcript.Target.Diagnosis);
+        Assert.Equal(item.Target.DiagnosticStatus.WireName(), transcript.Target.DiagnosticStatus);
+        Assert.Equal(item.Target.Urgency.WireName(), transcript.Target.Urgency);
+        Assert.Equal(DiagnosisOutcome.CorrectDiagnosis.WireName(), transcript.Grade.DiagnosisOutcome);
+        Assert.Equal(item.OriginalConcept, transcript.ParsedResponse.Diagnosis);
+        Assert.Null(transcript.SystemPrompt);
     }
 
     [Fact]
-    public async Task Build_RecordsProvenance_TimestampModeAndPerModelDetails()
+    public async Task ReportRecordsSchemaGraderPromptsAndReferencePolicyProvenance()
     {
         var report = await BuildRepositoryRunAsync();
 
+        Assert.Equal("5", Report.SchemaVersion);
         Assert.Equal(Report.SchemaVersion, report.Provenance.SchemaVersion);
+        Assert.Equal("structured-concept-v2", report.Provenance.Grader);
         Assert.Equal("2026-07-11T09:30:00Z", report.Provenance.TimestampUtc);
         Assert.Equal("demo", report.Provenance.Mode);
+        Assert.Equal(RepositoryBenchmark.CanonicalProfile, Assert.Single(report.Provenance.Prompts));
 
-        var labelOracle = RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle);
-        var reference = report.Provenance.Models.Single(m => m.Name == labelOracle.Name);
-        Assert.Equal("deterministic-reference-policy", reference.Details["kind"]);
-        Assert.Equal(ReferencePolicy.LabelOracle.ToString(), reference.Details["policy"]);
-        Assert.Null(reference.SystemPrompt); // reference policies never see one
+        var oracle = RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle);
+        var provenance = report.Provenance.Models.Single(model => model.Name == oracle.Name);
+        Assert.True(provenance.IsBaseline);
+        Assert.Null(provenance.SystemPrompt);
+        Assert.Equal("deterministic-reference-policy", provenance.Details["kind"]);
+        Assert.Contains("target diagnosis", provenance.Details["labelAccess"]);
     }
 
-    /// A live model's system prompt is the single biggest confound on an abstention number, so it must
-    /// land in the transcript rather than being implicit in the source — and the model's own name
-    /// carries the prompt, so no row can be read without knowing which prompt produced it.
     [Fact]
-    public void Build_RecordsTheSystemPromptInForce_ForALiveModel()
+    public void LiveModelReportCarriesBothPromptMessagesAndTheRenderedUserMessage()
     {
-        var prompts = Bench.LoadPrompts(RepositoryBenchmark.DataDirectory);
-        var prompt = Bench.SelectPrompts(prompts, []).Single();
-
-        var item = RepositoryBenchmark.Items.First(i => i.Variant == Variant.Full);
-        const string modelTag = "llama3.2:3b";
-        var model = new OllamaModel(modelTag, prompt);
-        var response = item.GroundTruth + ".";
-        var results = new List<ItemResult>
+        var profile = RepositoryBenchmark.PromptProfiles.Prompts.Single(prompt => prompt.Name == "forced-choice");
+        var model = new OllamaModel("llama3.2:3b", profile);
+        var item = RepositoryBenchmark.Item("c01", Variant.Full);
+        var result = RepositoryBenchmark.Grade(item, RepositoryBenchmark.TargetResponse(item), model.Name) with
         {
-            new(model.Name, item, model.SystemPrompt, response, LexicalGrader.Instance.Score(item, response))
+            SystemPrompt = model.SystemPrompt,
+            SentPrompt = profile.RenderUserPrompt(item.Vignette)
         };
-        var caseCount = results.Select(result => result.Item.CaseId).Distinct().Count();
-
         var report = Report.Build(
-            "ollama", caseCount, results.Count, [model],
-            new Dictionary<string, IReadOnlyList<ItemResult>> { [model.Name] = results },
-            [Scorecard.From(model.Name, results)],
+            "ollama",
+            1,
+            1,
+            [model],
+            new Dictionary<string, IReadOnlyList<ItemResult>> { [model.Name] = [result] },
+            [Scorecard.From(model.Name, [result])],
             FixedTime,
-            prompts: [prompt]);
+            RepositoryBenchmark.Grader,
+            [profile]);
 
-        Assert.Equal($"{modelTag} @ {prompt.Name}", model.Name);
-        Assert.Equal(prompt.Text, report.Transcripts[0].SystemPrompt);
-        Assert.Equal(prompt.Text, report.Provenance.Models[0].SystemPrompt);
-        Assert.False(report.Provenance.Models[0].IsBaseline);
-        Assert.Equal("ollama", report.Provenance.Models[0].Details["kind"]);
-        Assert.Equal("0", report.Provenance.Models[0].Details["temperature"]);
-        Assert.Equal(prompt.Name, report.Provenance.Models[0].Details["promptName"]);
-
-        // The prompt text travels with the run, verbatim.
-        Assert.Equal(prompt.Text, report.Provenance.Prompts.Single().Text);
+        Assert.Equal(profile.SystemText, report.Provenance.Prompts.Single().SystemText);
+        Assert.Equal(profile.UserTemplate, report.Provenance.Prompts.Single().UserTemplate);
+        Assert.Equal(profile.SystemText, report.Provenance.Models.Single().SystemPrompt);
+        Assert.Equal(profile.SystemText, report.Transcripts.Single().SystemPrompt);
+        Assert.Equal(profile.RenderUserPrompt(item.Vignette), report.Transcripts.Single().SentPrompt);
     }
 
-    /// Fail-closed: a report is never written from partial results.
     [Fact]
-    public void Build_MissingResultsForAModel_Throws()
+    public void ReportRefusesPartialModelResults()
     {
         var model = RepositoryBenchmark.Policy(ReferencePolicy.AlwaysAbstain);
 
         var ex = Assert.Throws<InvalidOperationException>(() => Report.Build(
-            "demo", RepositoryBenchmark.Cases.Count, RepositoryBenchmark.Items.Count, [model],
+            "demo",
+            RepositoryBenchmark.Cases.Count,
+            RepositoryBenchmark.Items.Count,
+            [model],
             new Dictionary<string, IReadOnlyList<ItemResult>>(),
             [],
-            FixedTime));
+            FixedTime,
+            RepositoryBenchmark.Grader));
 
         Assert.Contains(model.Name, ex.Message);
     }
 
     [Fact]
-    public async Task Serialize_RoundTripsAndKeepsAggregatesAlongsideTranscripts()
+    public async Task SerializationRoundTripsRatesCountsAndWilsonIntervals()
     {
         var report = await BuildRepositoryRunAsync();
         var json = Report.Serialize(report);
-        var roundTripped = JsonSerializer.Deserialize<RunReport>(json, Bench.Json);
+        var roundTrip = JsonSerializer.Deserialize<RunReport>(json, Bench.Json);
 
-        Assert.NotNull(roundTripped);
-        Assert.Equal(json, Report.Serialize(roundTripped));
+        Assert.NotNull(roundTrip);
+        Assert.Equal(json, Report.Serialize(roundTrip));
 
-        using var doc = JsonDocument.Parse(json);
-        var root = doc.RootElement;
-        var models = root.GetProperty("models").GetArrayLength();
-        var items = root.GetProperty("items").GetInt32();
+        using var document = JsonDocument.Parse(json);
+        var root = document.RootElement;
         Assert.Equal(RepositoryBenchmark.Cases.Count, root.GetProperty("cases").GetInt32());
-        Assert.Equal(RepositoryBenchmark.Items.Count, items);
-        Assert.Equal(items * models, root.GetProperty("transcripts").GetArrayLength());
-
-        var alwaysAnswer = RepositoryBenchmark.Policy(ReferencePolicy.AlwaysAnswer);
-        var expected = report.Models.Single(m => m.ModelName == alwaysAnswer.Name).UnsupportedAnswerRate;
-        var always = root.GetProperty("models").EnumerateArray()
-            .Single(m => m.GetProperty("modelName").GetString() == alwaysAnswer.Name);
-
-        // Every rate ships as {value, successes, total, ci95} — a consumer cannot read the point
-        // estimate without being handed its precision alongside it.
-        var unsupported = always.GetProperty("unsupportedAnswerRate");
-        Assert.Equal(expected.Value, unsupported.GetProperty("value").GetDouble());
-        Assert.Equal(expected.Successes, unsupported.GetProperty("successes").GetInt32());
-        Assert.Equal(expected.Total, unsupported.GetProperty("total").GetInt32());
-
-        var ci = unsupported.GetProperty("ci95");
-        Assert.Equal(2, ci.GetArrayLength());
-        Assert.Equal(expected.Ci95[0], ci[0].GetDouble());
-        Assert.Equal(expected.Ci95[1], ci[1].GetDouble());
+        Assert.Equal(RepositoryBenchmark.Items.Count, root.GetProperty("items").GetInt32());
+        var firstRate = root.GetProperty("models")[0].GetProperty("selectiveAccuracy");
+        Assert.True(firstRate.TryGetProperty("value", out _));
+        Assert.True(firstRate.TryGetProperty("successes", out _));
+        Assert.True(firstRate.TryGetProperty("total", out _));
+        Assert.Equal(2, firstRate.GetProperty("ci95").GetArrayLength());
     }
 
     [Fact]
-    public async Task Write_CreatesTheDirectoryAndTheFile()
+    public async Task WriteCreatesTheRequestedDirectoryAndFile()
     {
         var path = Path.Combine(Path.GetTempPath(), $"cab-{Guid.NewGuid():N}", "results", "run.json");
         try
@@ -176,12 +154,13 @@ public class ReportTests
             Report.Write(path, await BuildRepositoryRunAsync());
 
             Assert.True(File.Exists(path));
-            Assert.Contains("transcripts", File.ReadAllText(path));
+            Assert.Contains("parsedResponse", File.ReadAllText(path));
         }
         finally
         {
             var root = Path.GetDirectoryName(Path.GetDirectoryName(path))!;
-            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
         }
     }
 }

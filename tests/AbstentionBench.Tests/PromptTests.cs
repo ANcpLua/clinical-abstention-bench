@@ -3,130 +3,113 @@ using Xunit;
 
 namespace AbstentionBench.Tests;
 
-public class PromptTests
+public class PromptProfileTests
 {
     private const string LiveModelTag = "llama3.2:3b";
-    private static PromptFile Prompts => Bench.LoadPrompts(RepositoryBenchmark.DataDirectory);
 
     [Fact]
-    public void LoadPrompts_CarriesTheFourArmsOfThePromptSweep()
+    public void RepositoryDefinesOneCanonicalEvidenceProfileAndOneForcedChoiceStressArm()
     {
-        var file = Prompts;
+        var file = RepositoryBenchmark.PromptProfiles;
 
-        Assert.Equal("abstention-offered", file.Default);
-        Assert.Equal(
-            ["abstention-offered", "abstention-unmentioned", "abstention-encouraged", "no-forced-choice"],
-            file.Prompts.Select(p => p.Name));
+        Assert.Equal("evidence-required", file.Default);
+        Assert.Equal(["evidence-required", "forced-choice"], file.Prompts.Select(profile => profile.Name));
+        Assert.Same(RepositoryBenchmark.CanonicalProfile, file.Prompts.Single(profile => profile.Canonical));
 
-        foreach (var p in file.Prompts)
+        var evidence = file.Prompts.Single(profile => profile.Name == "evidence-required");
+        var forced = file.Prompts.Single(profile => profile.Name == "forced-choice");
+        Assert.DoesNotContain("single most likely", evidence.SystemText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("single most likely", evidence.UserTemplate, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("single most likely", forced.UserTemplate, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("non-null", forced.SystemText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EachProfileOwnsBothMessagesAndRendersTheVignetteExactlyOnce()
+    {
+        const string vignette = "A repository-backed vignette.";
+
+        foreach (var profile in RepositoryBenchmark.PromptProfiles.Prompts)
         {
-            Assert.False(string.IsNullOrWhiteSpace(p.Text), $"{p.Name} has no text");
-            Assert.False(string.IsNullOrWhiteSpace(p.Description), $"{p.Name} does not say what it is for");
+            Assert.False(string.IsNullOrWhiteSpace(profile.SystemText));
+            Assert.False(string.IsNullOrWhiteSpace(profile.UserTemplate));
+            Assert.Equal(
+                1,
+                profile.UserTemplate.Split(PromptProfile.VignetteToken, StringSplitOptions.None).Length - 1);
+
+            var rendered = profile.RenderUserPrompt(vignette);
+            Assert.Contains(vignette, rendered);
+            Assert.DoesNotContain(PromptProfile.VignetteToken, rendered);
+            Assert.Equal(1, rendered.Split(vignette, StringSplitOptions.None).Length - 1);
+        }
+
+        var profiles = RepositoryBenchmark.PromptProfiles.Prompts;
+        Assert.Equal(profiles.Count, profiles.Select(profile => profile.SystemText).Distinct().Count());
+        Assert.Equal(profiles.Count, profiles.Select(profile => profile.UserTemplate).Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void RenderRejectsAnEmptyVignette(string vignette)
+        => Assert.Throws<InvalidDataException>(
+            () => RepositoryBenchmark.CanonicalProfile.RenderUserPrompt(vignette));
+
+    [Fact]
+    public void SelectionDefaultsToCanonicalAndAllSweepsBothCompleteContracts()
+    {
+        var file = RepositoryBenchmark.PromptProfiles;
+
+        Assert.Same(
+            RepositoryBenchmark.CanonicalProfile,
+            Assert.Single(Bench.SelectPromptProfiles(file, [])));
+        Assert.Equal(file.Prompts, Bench.SelectPromptProfiles(file, ["all"]));
+        Assert.Same(
+            file.Prompts[1],
+            Assert.Single(Bench.SelectPromptProfiles(file, [file.Prompts[1].Name.ToUpperInvariant(), file.Prompts[1].Name])));
+    }
+
+    [Fact]
+    public void SelectionFailsClosedOnUnknownProfile()
+    {
+        var unknown = RepositoryBenchmark.PromptProfiles.Default + "-typo";
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => Bench.SelectPromptProfiles(RepositoryBenchmark.PromptProfiles, [unknown]));
+
+        Assert.Contains(unknown, ex.Message);
+        Assert.Contains(RepositoryBenchmark.PromptProfiles.Default, ex.Message);
+    }
+
+    [Fact]
+    public void LiveModelIdentityAndProvenanceCarryItsCompletePromptProfile()
+    {
+        foreach (var profile in RepositoryBenchmark.PromptProfiles.Prompts)
+        {
+            var model = new OllamaModel(LiveModelTag, profile);
+
+            Assert.Equal($"{LiveModelTag} @ {profile.Name}", model.Name);
+            Assert.Equal(profile.SystemText, model.SystemPrompt);
+            Assert.Same(profile, model.PromptProfile);
+            Assert.Equal(profile.SystemText, model.Provenance["systemPrompt"]);
+            Assert.Equal(profile.UserTemplate, model.Provenance["userTemplate"]);
+            Assert.Equal(profile.Name, model.Provenance["promptName"]);
+            Assert.False(model.IsBaseline);
         }
     }
 
-    /// The four prompts differ in the dimensions the sweep is meant to isolate: whether and
-    /// how hard, the model is pushed toward declining.
     [Fact]
-    public void ThePromptsDifferInHowHardTheyPushTowardAbstention()
+    public void BareLiveModelNameSelectsEveryPromptArmButExactNameSelectsOne()
     {
-        var byName = Prompts.Prompts.ToDictionary(p => p.Name);
-
-        // Offered: the option is stated, once, flatly.
-        Assert.Contains("INSUFFICIENT INFORMATION", byName["abstention-offered"].Text);
-
-        // Unmentioned: the model is never told it may decline. A model that declines here does so
-        // unprompted — the only condition under which abstention is a disposition and not compliance.
-        Assert.DoesNotContain("INSUFFICIENT", byName["abstention-unmentioned"].Text);
-        Assert.DoesNotContain("sufficient", byName["abstention-unmentioned"].Text);
-
-        // Encouraged: the asymmetry of the error is named out loud.
-        Assert.Contains("worse than declining", byName["abstention-encouraged"].Text);
-
-        // No-forced-choice: the words that create the contradiction are gone.
-        Assert.Contains("single most likely", byName["abstention-offered"].Text);
-        Assert.DoesNotContain("single most likely", byName["no-forced-choice"].Text);
-    }
-
-    [Fact]
-    public void SelectPrompts_WithNoSelection_UsesTheDefault()
-    {
-        var selected = Bench.SelectPrompts(Prompts, []);
-
-        Assert.Equal(Prompts.Default, selected.Single().Name);
-    }
-
-    [Fact]
-    public void SelectPrompts_All_SweepsEveryPrompt()
-        => Assert.Equal(Prompts.Prompts.Count, Bench.SelectPrompts(Prompts, ["all"]).Count);
-
-    [Fact]
-    public void SelectPrompts_MatchesCaseInsensitivelyAndDeduplicates()
-    {
-        var file = Prompts;
-        var target = file.Prompts.First(p => p.Name != file.Default);
-        var selected = Bench.SelectPrompts(file, [target.Name.ToUpperInvariant(), target.Name]);
-
-        Assert.Same(target, selected.Single());
-    }
-
-    /// Fail-closed: a typo must not silently fall back to the default and quietly change what the run
-    /// measured.
-    [Fact]
-    public void SelectPrompts_UnknownName_Throws()
-    {
-        var unknown = Prompts.Default + "-typo";
-        var ex = Assert.Throws<InvalidOperationException>(() => Bench.SelectPrompts(Prompts, [unknown]));
-
-        Assert.Contains("matches no prompt", ex.Message);
-        Assert.Contains(Prompts.Default, ex.Message);
-    }
-
-    /// The prompt is part of a live model's identity, because the number is a claim about the pair.
-    [Fact]
-    public void ALiveModelsNameCarriesItsPrompt()
-    {
-        var prompts = Bench.SelectPrompts(Prompts, ["all"]);
-        var models = prompts.Select(p => new OllamaModel(LiveModelTag, p)).ToList();
-
-        Assert.Equal(prompts.Select(p => $"{LiveModelTag} @ {p.Name}"), models.Select(m => m.Name));
-
-        Assert.All(models, m => Assert.False(m.IsBaseline));
-    }
-
-    /// A programmatic reference policy never sees a system prompt. That is exactly why it is an
-    /// analytical reference point rather than a competitor, and the report says so.
-    [Fact]
-    public void AReferencePolicyNeverSeesASystemPrompt_WhicheverPromptWasSelected()
-    {
-        foreach (var model in RepositoryBenchmark.ReferenceModels)
-        {
-            var reference = Assert.IsType<ReferencePolicyModel>(model);
-
-            Assert.True(model.IsBaseline);
-            Assert.Null(model.SystemPrompt);
-            Assert.Equal(reference.Policy.ToString(), model.Provenance["policy"]);
-        }
-    }
-
-    /// Sweeping a live model must produce one scorecard per prompt, not one overwritten by the last.
-    [Fact]
-    public void SelectModels_ByBareModelTag_SelectsEveryPromptVariantOfIt()
-    {
-        var prompts = Bench.SelectPrompts(Prompts, ["all"]);
         IReadOnlyList<IModel> available =
         [
             .. RepositoryBenchmark.ReferenceModels,
-            .. prompts.Select(p => new OllamaModel(LiveModelTag, p))
+            .. RepositoryBenchmark.PromptProfiles.Prompts.Select(profile => new OllamaModel(LiveModelTag, profile))
         ];
 
-        var swept = Bench.SelectModels(available, [LiveModelTag]);
-        Assert.Equal(prompts.Count, swept.Count);
-        Assert.All(swept, m => Assert.StartsWith(LiveModelTag + " @ ", m.Name));
+        var sweep = Bench.SelectModels(available, [LiveModelTag]);
+        Assert.Equal(RepositoryBenchmark.PromptProfiles.Prompts.Count, sweep.Count);
 
-        // ...and an exact name still selects exactly one.
-        var exactName = $"{LiveModelTag} @ {prompts[0].Name}";
-        var one = Bench.SelectModels(available, [exactName]);
-        Assert.Equal(exactName, one.Single().Name);
+        var exact = $"{LiveModelTag} @ {RepositoryBenchmark.CanonicalProfile.Name}";
+        Assert.Equal(exact, Assert.Single(Bench.SelectModels(available, [exact])).Name);
     }
 }

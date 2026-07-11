@@ -32,33 +32,29 @@ jobs:
       - name: Demo run (offline, no credentials)
         run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo
 
-      # Exercise the passing path and both failure directions so the gate cannot silently rot into
-      # "always fails" or "never enforces". The label oracle passes by construction from case labels.
+      # Exercise the passing path and both degenerate failure directions. Selective accuracy must be
+      # paired with coverage: an always-abstain policy has no answered items, while always-answer
+      # obtains full coverage by making unsupported diagnoses on true deferral targets.
       - name: Gate passes for the label oracle policy
         run: |
           dotnet run -c Release --no-build --project src/AbstentionBench -- \
-            demo --only LabelOracleBaseline --gate 0.9 --gate-answer-acc 0.9
+            demo --only LabelOracleBaseline --gate-coverage 0.75 \
+            --gate-selective-acc 0.9 --gate-urgency-acc 0.9
 
       - name: Gate fails for the always-answer policy
         run: |
           if dotnet run -c Release --no-build --project src/AbstentionBench -- \
-               demo --only AlwaysAnswerBaseline --gate 0.9; then
-            echo "::error::--gate exited 0 for a model with 0% abstention recall — the gate is not enforcing."
+               demo --only AlwaysAnswerBaseline --gate-selective-acc 0.9; then
+            echo "::error::an always-answer policy cleared the selective-accuracy floor."
             exit 1
           fi
           echo "gate correctly failed the run"
 
-      # Abstention-recall is trivially maximised by never answering. A recall-only gate is passed by
-      # the always-abstain policy, so the answer-accuracy floor must catch it.
       - name: Gate fails for the always-abstain policy
         run: |
-          dotnet run -c Release --no-build --project src/AbstentionBench -- \
-            demo --only AlwaysAbstainBaseline --gate 0.9 \
-            || { echo "::error::a 100%-abstention model should PASS a recall-only gate; that it did not means the gate is wrong."; exit 1; }
-
           if dotnet run -c Release --no-build --project src/AbstentionBench -- \
-               demo --only AlwaysAbstainBaseline --gate 0.9 --gate-answer-acc 0.9; then
-            echo "::error::a model that answers nothing cleared a gate with an answer-accuracy floor."
+               demo --only AlwaysAbstainBaseline --gate-coverage 0.75; then
+            echo "::error::a model that answers nothing cleared the coverage floor."
             exit 1
           fi
           echo "gate correctly failed the model that answers nothing"
