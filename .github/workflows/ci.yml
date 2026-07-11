@@ -31,3 +31,16 @@ jobs:
 
       - name: Demo run (offline, no credentials)
         run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo
+
+      # The gate is what a downstream user would put in their own CI, so exercise it in BOTH
+      # directions here — it cannot silently rot back into "always fails" or "never enforces".
+      - name: Gate passes for a model above threshold
+        run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo --only CalibratedBaseline --gate 0.9
+
+      - name: Gate fails for a model below threshold
+        run: |
+          if dotnet run -c Release --no-build --project src/AbstentionBench -- demo --only AlwaysAnswerBaseline --gate 0.9; then
+            echo "::error::--gate exited 0 for a model with 0% abstention recall — the gate is not enforcing."
+            exit 1
+          fi
+          echo "gate correctly failed the run"

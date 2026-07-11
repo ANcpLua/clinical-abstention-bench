@@ -61,6 +61,24 @@ public static class Bench
         return models;
     }
 
+    /// Narrow a run to the models named by `--only` (matched case-insensitively on IModel.Name).
+    /// An empty selection means "run everything". Fail-closed: a name that matches no model is an
+    /// ERROR, never a silent no-op — a typo must not quietly turn a gated CI run into a green one.
+    public static List<IModel> SelectModels(IReadOnlyList<IModel> available, IReadOnlyCollection<string> only)
+    {
+        if (only.Count == 0) return [.. available];
+
+        var selected = new List<IModel>(only.Count);
+        foreach (var name in only)
+        {
+            var match = available.FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidOperationException(
+                            $"--only '{name}' matched no model in this run. Available: {string.Join(", ", available.Select(m => m.Name))}.");
+            if (!selected.Contains(match)) selected.Add(match);
+        }
+        return selected;
+    }
+
     /// Run every item through one model, in item order.
     public static async Task<List<ItemResult>> RunModelAsync(
         IModel model, IReadOnlyList<Item> items, CancellationToken ct = default)

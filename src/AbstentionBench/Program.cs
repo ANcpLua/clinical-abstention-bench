@@ -10,8 +10,8 @@ using ClinicalAbstentionBench;
 //
 // Fail-closed, mirroring the ancplua.evaluation engine: the run exits 0 only when every item
 // was scored and the report was written. A requested-but-unavailable model is an ERROR (exit 1),
-// never a silent skip. An optional --gate <recall> also fails the run if a model's abstention
-// recall falls below the threshold.
+// never a silent skip. An optional --gate <recall> also fails the run if any model IN THE RUN has
+// an abstention recall below the threshold — use --only / --no-baselines to point it at one model.
 
 var opts = Args.Parse(args);
 
@@ -19,8 +19,8 @@ try
 {
     return opts.Mode switch
     {
-        "demo" => await RunDemoAsync(opts),
-        "ollama" => await RunDemoAsync(opts, new OllamaModel(opts.Model ?? "llama3.2:3b")),
+        "demo" => await RunBenchAsync(opts),
+        "ollama" => await RunBenchAsync(opts, new OllamaModel(opts.Model ?? "llama3.2:3b")),
         "llm" => RunLlm(opts),
         _ => Usage()
     };
@@ -31,13 +31,20 @@ catch (Exception ex)
     return 1; // fail closed
 }
 
-async Task<int> RunDemoAsync(Args o, IModel? liveModel = null)
+async Task<int> RunBenchAsync(Args o, IModel? liveModel = null)
 {
     var dataDir = Bench.FindDataDir(o.DataDir);
     var cases = Bench.LoadCases(dataDir);
     var items = Bench.ItemsFor(cases);
-    var models = Bench.LoadDemoModels(dataDir);
-    if (liveModel is not null) models.Add(liveModel);
+
+    var available = new List<IModel>();
+    if (!o.NoBaselines) available.AddRange(Bench.LoadDemoModels(dataDir));
+    if (liveModel is not null) available.Add(liveModel);
+
+    var models = Bench.SelectModels(available, o.Only);
+    if (models.Count == 0)
+        throw new InvalidOperationException(
+            "No models selected. --no-baselines removed every model from a 'demo' run — use 'ollama' to add a live model, or drop the flag.");
 
     Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} models\n");
 
@@ -58,14 +65,14 @@ async Task<int> RunDemoAsync(Args o, IModel? liveModel = null)
 
     if (o.Gate is { } threshold)
     {
-        var failing = cards.Where(c => c.AbstentionRecall < threshold).ToList();
-        if (failing.Count > 0)
+        var gate = Gate.Check(cards, threshold);
+        if (!gate.Passed)
         {
             Console.Error.WriteLine(
-                $"\nGATE FAILED: abstention recall < {threshold:P0} for: {string.Join(", ", failing.Select(f => f.ModelName))}");
+                $"\nGATE FAILED: abstention recall < {threshold:P0} for: {string.Join(", ", gate.FailingModels)}");
             return 1;
         }
-        Console.WriteLine($"\nGATE PASSED: every model ≥ {threshold:P0} abstention recall.");
+        Console.WriteLine($"\nGATE PASSED: every model in this run is ≥ {threshold:P0} abstention recall.");
     }
 
     return 0;
@@ -129,16 +136,32 @@ static int Usage()
 
         flags:
           --data  <dir>    path to the data/ folder (auto-detected by default)
-          --gate  <0..1>   fail the run if any model's abstention recall is below this
+          --gate  <0..1>   fail the run if ANY model in it has abstention recall below this.
+                           Combine with --only / --no-baselines: AlwaysAnswerBaseline has 0 %
+                           recall by construction, so an unfiltered run can never pass a gate.
+          --only  <name>   run only this model (repeatable; case-insensitive; unknown name = error)
+          --no-baselines   drop the deterministic fixture models from the run
           --out   <file>   report path (default: report.json)
           --html  <file>   also write a self-contained HTML report
           --model <name>   ollama model tag (default: llama3.2:3b)
+
+        examples:
+          dotnet run -- demo --only CalibratedBaseline --gate 0.9
+          dotnet run -- ollama --model llama3.2:3b --no-baselines --gate 0.9
         """);
     return 0;
 }
 
 /// Tiny arg holder.
-file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPath, string? HtmlPath, string? Model)
+file sealed record Args(
+    string Mode,
+    string? DataDir,
+    double? Gate,
+    string OutPath,
+    string? HtmlPath,
+    string? Model,
+    IReadOnlyList<string> Only,
+    bool NoBaselines)
 {
     public static Args Parse(string[] argv)
     {
@@ -148,6 +171,8 @@ file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPa
         var outPath = "report.json";
         string? htmlPath = null;
         string? model = null;
+        var only = new List<string>();
+        var noBaselines = false;
 
         for (var i = 0; i < argv.Length; i++)
         {
@@ -157,11 +182,13 @@ file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPa
                 case "--out" when i + 1 < argv.Length: outPath = argv[++i]; break;
                 case "--html" when i + 1 < argv.Length: htmlPath = argv[++i]; break;
                 case "--model" when i + 1 < argv.Length: model = argv[++i]; break;
+                case "--only" when i + 1 < argv.Length: only.Add(argv[++i]); break;
+                case "--no-baselines": noBaselines = true; break;
                 case "--gate" when i + 1 < argv.Length
                     && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var g):
                     gate = g; break;
             }
         }
-        return new Args(mode, dataDir, gate, outPath, htmlPath, model);
+        return new Args(mode, dataDir, gate, outPath, htmlPath, model, only, noBaselines);
     }
 }

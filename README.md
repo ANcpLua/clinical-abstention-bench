@@ -56,11 +56,26 @@ with a live model — read them as reference points, not competitors.
 ## Run it
 
 ```bash
-dotnet test                                         # 15 unit + integration tests
+dotnet test                                         # unit + integration tests
 dotnet run --project src/AbstentionBench -- demo    # offline demo, no credentials
 dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b --html report.html
                                                     # + a real local LLM via Ollama, with an HTML report
 ```
+
+### Gating a model in your own CI
+
+`--gate <recall>` exits non-zero if a model's abstention-recall falls below the threshold. It
+applies to **every model in the run**, so pair it with `--only` or `--no-baselines` to point it at
+the model you actually care about — `AlwaysAnswerBaseline` has 0 % recall by construction and would
+fail any threshold:
+
+```bash
+dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b --no-baselines --gate 0.9
+# → exits 1 unless the model abstains on ≥ 90 % of the must-abstain items
+```
+
+`--only <name>` is repeatable and matches model names case-insensitively; a name that matches no
+model is an **error**, not a silent no-op, so a typo can't turn a gated run green.
 
 ## A real model, measured
 
