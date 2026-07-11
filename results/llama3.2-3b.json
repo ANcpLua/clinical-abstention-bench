@@ -1,7 +1,7 @@
 {
   "provenance": {
-    "schemaVersion": "2",
-    "timestampUtc": "2026-07-11T05:58:25Z",
+    "schemaVersion": "3",
+    "timestampUtc": "2026-07-11T06:08:22Z",
     "mode": "ollama",
     "grader": "lexical-v1",
     "models": [
@@ -39,11 +39,51 @@
   "models": [
     {
       "modelName": "AlwaysAnswerBaseline",
-      "abstentionRecall": 0,
-      "unsupportedAnswerRate": 1,
-      "answerAccuracy": 1,
-      "overAbstentionRate": 0,
-      "selectiveAccuracy": 0.5,
+      "abstentionRecall": {
+        "value": 0,
+        "successes": 0,
+        "total": 12,
+        "ci95": [
+          0,
+          0.24249400665524085
+        ]
+      },
+      "unsupportedAnswerRate": {
+        "value": 1,
+        "successes": 12,
+        "total": 12,
+        "ci95": [
+          0.7575059933447592,
+          1
+        ]
+      },
+      "answerAccuracy": {
+        "value": 1,
+        "successes": 12,
+        "total": 12,
+        "ci95": [
+          0.7575059933447592,
+          1
+        ]
+      },
+      "overAbstentionRate": {
+        "value": 0,
+        "successes": 0,
+        "total": 12,
+        "ci95": [
+          0,
+          0.24249400665524085
+        ]
+      },
+      "selectiveAccuracy": {
+        "value": 0.5,
+        "successes": 12,
+        "total": 24,
+        "ci95": [
+          0.31427425819573357,
+          0.6857257418042664
+        ]
+      },
       "ablatedTotal": 12,
       "correctAbstentions": 0,
       "unsupportedAnswers": 12,
@@ -54,11 +94,51 @@
     },
     {
       "modelName": "CalibratedBaseline",
-      "abstentionRecall": 1,
-      "unsupportedAnswerRate": 0,
-      "answerAccuracy": 1,
-      "overAbstentionRate": 0,
-      "selectiveAccuracy": 1,
+      "abstentionRecall": {
+        "value": 1,
+        "successes": 12,
+        "total": 12,
+        "ci95": [
+          0.7575059933447592,
+          1
+        ]
+      },
+      "unsupportedAnswerRate": {
+        "value": 0,
+        "successes": 0,
+        "total": 12,
+        "ci95": [
+          0,
+          0.24249400665524085
+        ]
+      },
+      "answerAccuracy": {
+        "value": 1,
+        "successes": 12,
+        "total": 12,
+        "ci95": [
+          0.7575059933447592,
+          1
+        ]
+      },
+      "overAbstentionRate": {
+        "value": 0,
+        "successes": 0,
+        "total": 12,
+        "ci95": [
+          0,
+          0.24249400665524085
+        ]
+      },
+      "selectiveAccuracy": {
+        "value": 1,
+        "successes": 24,
+        "total": 24,
+        "ci95": [
+          0.8620237953250198,
+          1
+        ]
+      },
       "ablatedTotal": 12,
       "correctAbstentions": 12,
       "unsupportedAnswers": 0,
@@ -69,11 +149,51 @@
     },
     {
       "modelName": "llama3.2:3b",
-      "abstentionRecall": 0,
-      "unsupportedAnswerRate": 1,
-      "answerAccuracy": 1,
-      "overAbstentionRate": 0,
-      "selectiveAccuracy": 0.5,
+      "abstentionRecall": {
+        "value": 0,
+        "successes": 0,
+        "total": 12,
+        "ci95": [
+          0,
+          0.24249400665524085
+        ]
+      },
+      "unsupportedAnswerRate": {
+        "value": 1,
+        "successes": 12,
+        "total": 12,
+        "ci95": [
+          0.7575059933447592,
+          1
+        ]
+      },
+      "answerAccuracy": {
+        "value": 1,
+        "successes": 12,
+        "total": 12,
+        "ci95": [
+          0.7575059933447592,
+          1
+        ]
+      },
+      "overAbstentionRate": {
+        "value": 0,
+        "successes": 0,
+        "total": 12,
+        "ci95": [
+          0,
+          0.24249400665524085
+        ]
+      },
+      "selectiveAccuracy": {
+        "value": 0.5,
+        "successes": 12,
+        "total": 24,
+        "ci95": [
+          0.31427425819573357,
+          0.6857257418042664
+        ]
+      },
       "ablatedTotal": 12,
       "correctAbstentions": 0,
       "unsupportedAnswers": 12,

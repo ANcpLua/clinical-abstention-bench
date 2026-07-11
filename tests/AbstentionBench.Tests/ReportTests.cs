@@ -119,7 +119,18 @@ public class ReportTests
 
         var always = root.GetProperty("models").EnumerateArray()
             .Single(m => m.GetProperty("modelName").GetString() == "AlwaysAnswerBaseline");
-        Assert.Equal(1.0, always.GetProperty("unsupportedAnswerRate").GetDouble());
+
+        // Every rate ships as {value, successes, total, ci95} — a consumer cannot read the point
+        // estimate without being handed its precision alongside it.
+        var unsupported = always.GetProperty("unsupportedAnswerRate");
+        Assert.Equal(1.0, unsupported.GetProperty("value").GetDouble());
+        Assert.Equal(12, unsupported.GetProperty("successes").GetInt32());
+        Assert.Equal(12, unsupported.GetProperty("total").GetInt32());
+
+        var ci = unsupported.GetProperty("ci95");
+        Assert.Equal(2, ci.GetArrayLength());
+        Assert.Equal(0.7575, ci[0].GetDouble(), precision: 4);
+        Assert.Equal(1.0, ci[1].GetDouble());
     }
 
     [Fact]

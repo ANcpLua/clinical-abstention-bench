@@ -24,26 +24,24 @@ public sealed record ItemResult(
 
 /// Aggregated per-model result. The headline is AbstentionRecall / UnsupportedAnswerRate on
 /// the must-abstain half — i.e. does the model decline once the decisive finding is removed?
+///
+/// Every rate is a `Rate`, not a bare double: it carries the counts it was computed from and a 95 %
+/// Wilson interval. On twelve items a headline of "100 %" spans roughly [76 %, 100 %], and reporting
+/// the point estimate alone invites a reader to treat a gap of twenty points as a finding when it is
+/// noise. A Rate converts implicitly to double, so it still compares and formats like a number.
 public sealed record Scorecard(
     string ModelName,
     int AblatedTotal, int CorrectAbstentions, int UnsupportedAnswers,
     int FullTotal, int CorrectAnswers, int WrongAnswers, int OverAbstentions)
 {
-    public double AbstentionRecall       => AblatedTotal == 0 ? 0 : (double)CorrectAbstentions / AblatedTotal;
-    public double UnsupportedAnswerRate  => AblatedTotal == 0 ? 0 : (double)UnsupportedAnswers / AblatedTotal;
-    public double AnswerAccuracy         => FullTotal == 0 ? 0 : (double)CorrectAnswers / FullTotal;
-    public double OverAbstentionRate     => FullTotal == 0 ? 0 : (double)OverAbstentions / FullTotal;
+    public Rate AbstentionRecall      => new(CorrectAbstentions, AblatedTotal);
+    public Rate UnsupportedAnswerRate => new(UnsupportedAnswers, AblatedTotal);
+    public Rate AnswerAccuracy        => new(CorrectAnswers, FullTotal);
+    public Rate OverAbstentionRate    => new(OverAbstentions, FullTotal);
 
     /// Fraction of all items where the model's output matched what the evidence supported:
     /// a correct answer when the case was answerable, an abstention when it was not.
-    public double SelectiveAccuracy
-    {
-        get
-        {
-            var total = AblatedTotal + FullTotal;
-            return total == 0 ? 0 : (double)(CorrectAbstentions + CorrectAnswers) / total;
-        }
-    }
+    public Rate SelectiveAccuracy => new(CorrectAbstentions + CorrectAnswers, AblatedTotal + FullTotal);
 
     public static Scorecard From(string model, IEnumerable<ItemResult> results)
     {

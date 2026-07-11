@@ -100,16 +100,16 @@ int RunLlm(Args o)
 
 static void PrintTable(IReadOnlyList<Scorecard> cards)
 {
-    Console.WriteLine($"{"model",-22} {"abstain-recall",15} {"unsupported",12} {"answer-acc",12} {"over-abstain",13} {"selective-acc",14}");
-    Console.WriteLine(new string('─', 93));
+    Console.WriteLine($"{"model",-22} {"abstain-recall",14} {"unsupported",14} {"answer-acc",14} {"over-abstain",14} {"selective-acc",14}");
+    Console.WriteLine(new string('─', 97));
     foreach (var c in cards)
-        Console.WriteLine($"{c.ModelName,-22} {Pct(c.AbstentionRecall),15} {Pct(c.UnsupportedAnswerRate),12} {Pct(c.AnswerAccuracy),12} {Pct(c.OverAbstentionRate),13} {Pct(c.SelectiveAccuracy),14}");
+        Console.WriteLine($"{c.ModelName,-22} {c.AbstentionRecall,14} {c.UnsupportedAnswerRate,14} {c.AnswerAccuracy,14} {c.OverAbstentionRate,14} {c.SelectiveAccuracy,14}");
     Console.WriteLine();
     Console.WriteLine("abstain-recall: of the must-abstain (ablated) items, how many the model correctly declined.");
     Console.WriteLine("unsupported:    of the must-abstain items, how many it answered anyway — the failure mode this benchmark targets.");
+    Console.WriteLine("cells are percentages; [low–high] is the 95 % Wilson score interval. At n = 12 these are wide —");
+    Console.WriteLine("overlapping intervals mean the models are not distinguishable, however far apart the point estimates look.");
 }
-
-static string Pct(double v) => v.ToString("P0", CultureInfo.InvariantCulture);
 
 static int Usage()
 {

@@ -10,7 +10,9 @@ namespace ClinicalAbstentionBench;
 public static class Report
 {
     /// Written into every report so a stale artifact can be told apart from a current one.
-    public const string SchemaVersion = "2";
+    /// Bumped to 3: every rate is now an object ({value, successes, total, ci95}) where it used to be
+    /// a bare number. That is a breaking change for anything reading the aggregates.
+    public const string SchemaVersion = "3";
 
     public static RunReport Build(
         string mode,
@@ -105,14 +107,15 @@ public sealed record TranscriptEntry(
     string Outcome,
     string SupportedAnswer);
 
-/// The aggregate half of the report. Unchanged in meaning from v0 — transcripts are additive.
+/// The aggregate half of the report. Every rate ships with the counts behind it and its 95 % Wilson
+/// interval, so a consumer cannot read a point estimate without also being handed its precision.
 public sealed record ModelScores(
     string ModelName,
-    double AbstentionRecall,
-    double UnsupportedAnswerRate,
-    double AnswerAccuracy,
-    double OverAbstentionRate,
-    double SelectiveAccuracy,
+    ReportedRate AbstentionRecall,
+    ReportedRate UnsupportedAnswerRate,
+    ReportedRate AnswerAccuracy,
+    ReportedRate OverAbstentionRate,
+    ReportedRate SelectiveAccuracy,
     int AblatedTotal,
     int CorrectAbstentions,
     int UnsupportedAnswers,
@@ -123,7 +126,18 @@ public sealed record ModelScores(
 {
     public static ModelScores From(Scorecard c) => new(
         c.ModelName,
-        c.AbstentionRecall, c.UnsupportedAnswerRate, c.AnswerAccuracy, c.OverAbstentionRate, c.SelectiveAccuracy,
+        ReportedRate.From(c.AbstentionRecall),
+        ReportedRate.From(c.UnsupportedAnswerRate),
+        ReportedRate.From(c.AnswerAccuracy),
+        ReportedRate.From(c.OverAbstentionRate),
+        ReportedRate.From(c.SelectiveAccuracy),
         c.AblatedTotal, c.CorrectAbstentions, c.UnsupportedAnswers,
         c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions);
+}
+
+/// A rate as it appears in JSON: the point estimate, the counts it came from, and the 95 % Wilson
+/// score interval. `ci95` is [lower, upper].
+public sealed record ReportedRate(double Value, int Successes, int Total, IReadOnlyList<double> Ci95)
+{
+    public static ReportedRate From(Rate r) => new(r.Value, r.Successes, r.Total, [r.Lower, r.Upper]);
 }

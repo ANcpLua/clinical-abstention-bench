@@ -12,16 +12,16 @@ public static class ScorecardPage
     public static string Render(int caseCount, int itemCount, IReadOnlyList<Scorecard> cards, BenchCase example)
     {
         var rows = new StringBuilder();
-        foreach (var c in cards.OrderByDescending(c => c.SelectiveAccuracy))
+        foreach (var c in cards.OrderByDescending(c => c.SelectiveAccuracy.Value))
         {
             rows.AppendLine($"""
                 <tr>
                   <td class="model">{E(c.ModelName)}</td>
-                  <td>{Pct(c.AbstentionRecall)}</td>
-                  <td class="unsupported">{Pct(c.UnsupportedAnswerRate)}</td>
-                  <td>{Pct(c.AnswerAccuracy)}</td>
-                  <td>{Pct(c.OverAbstentionRate)}</td>
-                  <td class="selective">{Pct(c.SelectiveAccuracy)}</td>
+                  <td>{Cell(c.AbstentionRecall)}</td>
+                  <td class="unsupported">{Cell(c.UnsupportedAnswerRate)}</td>
+                  <td>{Cell(c.AnswerAccuracy)}</td>
+                  <td>{Cell(c.OverAbstentionRate)}</td>
+                  <td class="selective">{Cell(c.SelectiveAccuracy)}</td>
                 </tr>
                 """);
         }
@@ -47,6 +47,8 @@ public static class ScorecardPage
               td.selective { color:#51cf66; font-weight:700; }
               th.unsupported-h { color:#ff6b6b; }
               .note { color:#9aa7b4; font-size:13px; }
+              .ci { display:block; color:#7d8894; font-size:11px; font-weight:400; margin-top:2px; }
+              td.unsupported .ci, td.selective .ci { color:#7d8894; }
               .pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:10px; }
               .card { background:#111823; border:1px solid #1c2530; border-radius:10px; padding:16px 18px; font-size:14px; }
               .card h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
@@ -70,6 +72,7 @@ public static class ScorecardPage
                 </tbody>
               </table>
               <p class="note">unsupported — of the items where the decisive finding was removed, the fraction the model answered anyway. This is the failure mode the benchmark targets.</p>
+              <p class="note">Brackets are the <strong>95 % Wilson score interval</strong>. With {{itemCount / 2}} cases they are wide: where two models' intervals overlap, this benchmark cannot tell them apart, however far apart the headline percentages look.</p>
               <p class="note">Baseline rows are deterministic fixtures keyed on item id; they never see a system prompt, so they are not directly comparable to a live model.</p>
               <h2>How a case works — {{E(example.Condition)}}</h2>
               <div class="pair">
@@ -81,7 +84,13 @@ public static class ScorecardPage
             """;
     }
 
-    private static string Pct(double v) => v.ToString("P0", CultureInfo.InvariantCulture).Replace(" ", " ");
+    /// A rate is never shown without its interval. At n = 12 the point estimate on its own is the
+    /// most misleading thing this page could print.
+    private static string Cell(Rate r)
+        => $"""{Pct(r.Value)}<span class="ci">[{Pct(r.Lower)}–{Pct(r.Upper)}]</span>""";
+
+    private static string Pct(double v)
+        => Math.Round(v * 100).ToString("0", CultureInfo.InvariantCulture) + " %";
 
     private static string E(string s) => WebUtility.HtmlEncode(s);
 }

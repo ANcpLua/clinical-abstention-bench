@@ -32,11 +32,15 @@ $ dotnet run --project src/AbstentionBench -- demo
 
 clinical-abstention-bench · 12 cases → 24 items · 2 models
 
-model                   abstain-recall  unsupported   answer-acc  over-abstain  selective-acc
-─────────────────────────────────────────────────────────────────────────────────────────────
-AlwaysAnswerBaseline               0 %        100 %        100 %           0 %           50 %
-CalibratedBaseline               100 %          0 %        100 %           0 %          100 %
+model                  abstain-recall    unsupported     answer-acc   over-abstain  selective-acc
+─────────────────────────────────────────────────────────────────────────────────────────────────
+AlwaysAnswerBaseline         0 [0–24]   100 [76–100]   100 [76–100]       0 [0–24]     50 [31–69]
+CalibratedBaseline       100 [76–100]       0 [0–24]   100 [76–100]       0 [0–24]   100 [86–100]
 ```
+
+Cells are percentages; brackets are the **95 % Wilson score interval**. They are printed on every
+rate, everywhere — console, JSON and HTML — because with twelve cases a bare "100 %" invites a reader
+to treat it as certainty. It is not: 12 of 12 is `[76 %, 100 %]`.
 
 `AlwaysAnswerBaseline` and `CalibratedBaseline` are deterministic **fixture** models (no API keys) so
 the harness runs anywhere, including CI. They exist to show the benchmark *discriminates*. Note they
@@ -52,6 +56,11 @@ with a live model — read them as reference points, not competitors.
 | **answer-accuracy** | full | fraction of answerable items it got right |
 | **over-abstention** | full | fraction it declined when the evidence did support an answer |
 | **selective-accuracy** | all | correct answer when answerable + abstention when not, over all items |
+
+Every one of these is reported with a **95 % Wilson score interval** — never as a bare point
+estimate. Wilson rather than the textbook normal approximation because the normal interval collapses
+to zero width at exactly 0 % and 100 %, the two values this benchmark reports most often; it would
+print `100 % ± 0`, which is a lie about a sample of twelve.
 
 ## Run it
 
@@ -84,9 +93,9 @@ prompt) against the 12 case pairs:
 
 | model | abstain-recall | unsupported | answer-acc | selective-acc |
 |---|---|---|---|---|
-| CalibratedBaseline | 100 % | 0 % | 100 % | 100 % |
-| AlwaysAnswerBaseline | 0 % | 100 % | 100 % | 50 % |
-| **llama3.2:3b** | **0 %** | **100 %** | **100 %** | **50 %** |
+| CalibratedBaseline | 100 % [76–100] | 0 % [0–24] | 100 % [76–100] | 100 % [86–100] |
+| AlwaysAnswerBaseline | 0 % [0–24] | 100 % [76–100] | 100 % [76–100] | 50 % [31–69] |
+| **llama3.2:3b** | **0 % [0–24]** | **100 % [76–100]** | **100 % [76–100]** | **50 % [31–69]** |
 
 The 3B model got **every answerable case right** and abstained on **none** of the twelve items where
 the decisive finding had been removed. Its scorecard is now *identical* to `AlwaysAnswerBaseline` —
@@ -107,9 +116,11 @@ endpoint, model tag, weight digest, quantization, temperature, and which grader 
 > the grader is now token-based, synonym-aware and negation-aware. The **abstention** finding was
 > never affected and still stands.
 
-> ⚠️ **Read these numbers with care.** n = 12 ablated items, so a 100 % rate carries a 95 % Wilson
-> interval of roughly [76 %, 100 %] — differences smaller than ~30 points are not distinguishable at
-> this sample size, and this is one model under one system prompt.
+> ⚠️ **Read these numbers with care.** Every interval here is wide, because n = 12. `llama3.2:3b` and
+> `AlwaysAnswerBaseline` are not merely close — on this evidence they are **the same scorecard**, and
+> the benchmark as it stands cannot separate a model that read the labs and was overconfident from
+> one that ignored them entirely. That is what the [counterfactual arm](#roadmap-v1) is for. This is
+> also one model under *one* system prompt; abstention is prompt-sensitive.
 
 The harness is **fail-closed**: it exits non-zero if any item can't be scored or a requested model is
 unavailable — a missing credential is an *error*, never a silent skip.
