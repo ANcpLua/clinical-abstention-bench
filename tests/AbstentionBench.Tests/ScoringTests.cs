@@ -5,29 +5,39 @@ namespace AbstentionBench.Tests;
 
 public class ScoringTests
 {
+    private static BenchCase Case(string answer = "Answer", params string[] synonyms)
+        => new("c99", "Test", "full?", "ablated?", "counterfactual?", answer, "the fact", "why", synonyms);
+
     [Fact]
-    public void FromCase_ProducesOneAnswerableAndOneMustAbstain()
+    public void FromCase_ProducesOneAnswerableAndTwoMustAbstain()
     {
-        var c = new BenchCase("c99", "Test", "full?", "ablated?", "Answer", "the fact", "why", ["Ans"]);
-        var items = Item.FromCase(c).ToList();
-        Assert.Equal(2, items.Count);
+        var items = Item.FromCase(Case()).ToList();
+
+        Assert.Equal(3, items.Count);
         Assert.Contains(items, i => i is { Variant: Variant.Full, MustAbstain: false });
         Assert.Contains(items, i => i is { Variant: Variant.Ablated, MustAbstain: true, GroundTruth: "INSUFFICIENT" });
-        Assert.Equal("c99:ablated", items.Single(i => i.MustAbstain).Key);
+        Assert.Contains(items, i => i is { Variant: Variant.Counterfactual, MustAbstain: true, GroundTruth: "INSUFFICIENT" });
+        Assert.Equal(["c99:full", "c99:ablated", "c99:counterfactual"], items.Select(i => i.Key));
     }
 
-    /// The answerable item carries the case's synonyms; the must-abstain item has nothing to accept.
+    /// The answerable item carries the case's synonyms; the must-abstain items have nothing to accept.
+    /// The counterfactual item carries the same list as what it must NOT say.
     [Fact]
     public void FromCase_AcceptedFormsCoverTheCanonicalAnswerAndItsSynonyms()
     {
-        var c = new BenchCase("c99", "Test", "full?", "ablated?", "Gout", "the fact", "why", ["podagra"]);
-        var items = Item.FromCase(c).ToList();
+        var items = Item.FromCase(Case("Gout", "podagra")).ToList();
 
         var full = items.Single(i => i.Variant == Variant.Full);
         Assert.Equal(["Gout", "podagra"], full.AcceptedForms);
+        Assert.Empty(full.ExcludedForms);
 
         var ablated = items.Single(i => i.Variant == Variant.Ablated);
         Assert.Equal(["INSUFFICIENT"], ablated.AcceptedForms);
+        Assert.Empty(ablated.ExcludedForms);
+
+        // The counterfactual item's job is to know what the flipped evidence now rules OUT.
+        var counterfactual = items.Single(i => i.Variant == Variant.Counterfactual);
+        Assert.Equal(["Gout", "podagra"], counterfactual.ExcludedForms);
     }
 
     [Fact]
@@ -65,7 +75,7 @@ public class DatasetIntegrationTests
         var models = Bench.LoadDemoModels(dataDir);
 
         Assert.True(cases.Count >= 10, "expected a non-trivial dataset");
-        Assert.Equal(cases.Count * 2, items.Count);
+        Assert.Equal(cases.Count * 3, items.Count); // full + ablated + counterfactual
 
         var cards = models
             .Select(m => Scorecard.From(m.Name, Bench.RunModelAsync(m, items).GetAwaiter().GetResult()))

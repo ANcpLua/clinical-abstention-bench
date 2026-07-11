@@ -50,7 +50,32 @@ public class ScorecardPageTests
         Assert.Contains("[0 %–24 %]", html);
         Assert.Contains("Wilson score interval", html);
 
-        // One interval per rate per model — five rates, two baselines.
-        Assert.Equal(cards.Count * 5, html.Split("""<span class="ci">""").Length - 1);
+        // One interval per rate per model — five on the scorecard, three on the counterfactual probe.
+        Assert.Equal(cards.Count * 8, html.Split("""<span class="ci">""").Length - 1);
+    }
+
+    [Fact]
+    public void Render_ShowsTheCounterfactualProbeAndTheThreeVariantsOfACase()
+    {
+        var dataDir = Bench.FindDataDir();
+        var cases = Bench.LoadCases(dataDir);
+        var items = Bench.ItemsFor(cases);
+        var cards = Bench.LoadDemoModels(dataDir)
+            .Select(m => Scorecard.From(m.Name, Bench.RunModelAsync(m, items).GetAwaiter().GetResult()))
+            .ToList();
+
+        var html = ScorecardPage.Render(cases.Count, items.Count, cards, cases[0]);
+
+        Assert.Contains("Counterfactual probe", html);
+        Assert.Contains("evidence-sensitivity", html);
+        Assert.Contains("said the excluded diagnosis", html);
+
+        // All three variants of the example case are shown side by side.
+        Assert.Contains(cases[0].FullPrompt, html);
+        Assert.Contains(cases[0].AblatedPrompt, html);
+        Assert.Contains(cases[0].CounterfactualPrompt, html);
+
+        // And the page says out loud why the probe is not part of the headline score.
+        Assert.Contains("trivially maximised by a model that answers nothing", html);
     }
 }

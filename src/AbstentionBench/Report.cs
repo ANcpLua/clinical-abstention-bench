@@ -10,9 +10,11 @@ namespace ClinicalAbstentionBench;
 public static class Report
 {
     /// Written into every report so a stale artifact can be told apart from a current one.
-    /// Bumped to 3: every rate is now an object ({value, successes, total, ci95}) where it used to be
-    /// a bare number. That is a breaking change for anything reading the aggregates.
-    public const string SchemaVersion = "3";
+    ///  - 2: added per-item transcripts and provenance.
+    ///  - 3: every rate became an object ({value, successes, total, ci95}) where it had been a number.
+    ///  - 4: added the counterfactual arm — a third `variant` value and a sixth `outcome` value
+    ///       (EvidenceInsensitive), either of which breaks a consumer parsing them as a closed set.
+    public const string SchemaVersion = "4";
 
     public static RunReport Build(
         string mode,
@@ -116,13 +118,19 @@ public sealed record ModelScores(
     ReportedRate AnswerAccuracy,
     ReportedRate OverAbstentionRate,
     ReportedRate SelectiveAccuracy,
+    ReportedRate EvidenceSensitivity,
+    ReportedRate EvidenceInsensitivityRate,
     int AblatedTotal,
     int CorrectAbstentions,
     int UnsupportedAnswers,
     int FullTotal,
     int CorrectAnswers,
     int WrongAnswers,
-    int OverAbstentions)
+    int OverAbstentions,
+    int CounterfactualTotal,
+    int CounterfactualAbstentions,
+    int EvidenceInsensitiveAnswers,
+    int CounterfactualOtherAnswers)
 {
     public static ModelScores From(Scorecard c) => new(
         c.ModelName,
@@ -131,8 +139,12 @@ public sealed record ModelScores(
         ReportedRate.From(c.AnswerAccuracy),
         ReportedRate.From(c.OverAbstentionRate),
         ReportedRate.From(c.SelectiveAccuracy),
+        ReportedRate.From(c.EvidenceSensitivity),
+        ReportedRate.From(c.EvidenceInsensitivityRate),
         c.AblatedTotal, c.CorrectAbstentions, c.UnsupportedAnswers,
-        c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions);
+        c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions,
+        c.CounterfactualTotal, c.CounterfactualAbstentions,
+        c.EvidenceInsensitiveAnswers, c.CounterfactualOtherAnswers);
 }
 
 /// A rate as it appears in JSON: the point estimate, the counts it came from, and the 95 % Wilson

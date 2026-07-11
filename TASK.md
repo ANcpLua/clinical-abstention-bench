@@ -31,6 +31,30 @@ Build + tests are green; the **content and the construct** are what need a human
   can be pointed at a real model in CI. The example has been pulled from the README until it works.
 
 ## Next — construct validity (Alexander)
+
+### ⚠️ The 12 counterfactual findings are NOT canonical until you sign off
+Like the original vignettes, the counterfactual medicine is **pending human review**. It is authored,
+tested, committed and already producing the headline result — and none of that makes it correct.
+
+The construction rule was deliberately conservative: **the counterfactual is the decisive finding
+flipped to its negative or normal value, never a new diagnosis invented to replace it.** So the claim
+being made per case is only *"this finding excludes that diagnosis, and what remains is
+under-determined"* — checkable, rather than authored. The ones worth your eye:
+
+- **c03 (STEMI → normal ECG).** A normal ECG excludes ST-*elevation* MI. It does **not** exclude ACS,
+  and the vignette (58, crushing chest pain, radiating to the left arm) is still an ACS workup. The
+  supported reply is INSUFFICIENT — but is a model that says "unstable angina" wrong, or right?
+- **c06 (gout → no crystals, negative Gram stain).** Deliberately leaves the joint possibly septic: a
+  Gram stain is ~50 % sensitive. Correct medicine, but it means the "under-determined" case here is
+  an emergency, not a puzzle. Is that the right thing to score as an abstention?
+- **c11 (SAH → negative early CT).** Rests on the CT-within-6-hours ≈ 100 % sensitivity result, which
+  is why the prompt says *"within 3 hours"*. If you do not accept that literature, this case is broken.
+- **c10 (appendicitis → normal appendix on CT).** The exam still screams appendicitis while the
+  imaging says no. That tension is the point — it is the sharpest test of whether the model reads the
+  decisive finding — but it is also the least comfortable vignette to call under-determined.
+- **c02 / c05 / c12** are the three where llama3.2:3b was actually evidence-insensitive, so they are
+  carrying the headline claim and deserve the hardest look.
+
 - [ ] **Human review of `acceptedAnswers` in `data/cases.json`.** The grader now matches a list of
       accepted surface forms per case instead of one canonical string. Those lists are nominally a
       scoring-schema concern, but they encode clinical judgements and **they were authored after

@@ -114,6 +114,18 @@ static void PrintTable(IReadOnlyList<Scorecard> cards)
     Console.WriteLine("unsupported:    of the must-abstain items, how many it answered anyway — the failure mode this benchmark targets.");
     Console.WriteLine("cells are percentages; [low–high] is the 95 % Wilson score interval. At n = 12 these are wide —");
     Console.WriteLine("overlapping intervals mean the models are not distinguishable, however far apart the point estimates look.");
+
+    if (cards.All(c => c.CounterfactualTotal == 0)) return;
+
+    Console.WriteLine();
+    Console.WriteLine("COUNTERFACTUAL PROBE — the decisive finding is flipped so it EXCLUDES the original diagnosis.");
+    Console.WriteLine($"{"model",-22} {"evidence-sens",14} {"said-excluded",14} {"abstained",14}");
+    Console.WriteLine(new string('─', 67));
+    foreach (var c in cards)
+        Console.WriteLine($"{c.ModelName,-22} {c.EvidenceSensitivity,14} {c.EvidenceInsensitivityRate,14} {new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal),14}");
+    Console.WriteLine();
+    Console.WriteLine("said-excluded:  it named the diagnosis the flipped finding rules out — so it cannot have read the finding.");
+    Console.WriteLine("This is a probe, not part of selective-accuracy: it is trivially maxed by a model that answers nothing.");
 }
 
 static int Usage()

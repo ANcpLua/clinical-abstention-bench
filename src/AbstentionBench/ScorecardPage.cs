@@ -26,6 +26,8 @@ public static class ScorecardPage
                 """);
         }
 
+        var probe = Probe(cards);
+
         return $$"""
             <!doctype html>
             <html lang="en">
@@ -49,12 +51,13 @@ public static class ScorecardPage
               .note { color:#9aa7b4; font-size:13px; }
               .ci { display:block; color:#7d8894; font-size:11px; font-weight:400; margin-top:2px; }
               td.unsupported .ci, td.selective .ci { color:#7d8894; }
-              .pair { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:10px; }
+              .triple { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin-top:10px; }
               .card { background:#111823; border:1px solid #1c2530; border-radius:10px; padding:16px 18px; font-size:14px; }
               .card h3 { margin:0 0 8px; font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
-              .full h3 { color:#51cf66; } .ablated h3 { color:#ff6b6b; }
+              .full h3 { color:#51cf66; } .ablated h3 { color:#ff6b6b; } .counterfactual h3 { color:#ffa94d; }
               .ans { margin-top:10px; font-weight:700; }
-              .full .ans { color:#51cf66; } .ablated .ans { color:#ff6b6b; }
+              .full .ans { color:#51cf66; } .ablated .ans { color:#ff6b6b; } .counterfactual .ans { color:#ffa94d; }
+              .ans small { display:block; margin-top:6px; font-weight:400; color:#9aa7b4; font-size:12px; }
               h2 { font-size:16px; margin:28px 0 4px; }
             </style>
             </head>
@@ -72,15 +75,55 @@ public static class ScorecardPage
                 </tbody>
               </table>
               <p class="note">unsupported — of the items where the decisive finding was removed, the fraction the model answered anyway. This is the failure mode the benchmark targets.</p>
-              <p class="note">Brackets are the <strong>95 % Wilson score interval</strong>. With {{itemCount / 2}} cases they are wide: where two models' intervals overlap, this benchmark cannot tell them apart, however far apart the headline percentages look.</p>
+              <p class="note">Brackets are the <strong>95 % Wilson score interval</strong>. With {{caseCount}} cases they are wide: where two models' intervals overlap, this benchmark cannot tell them apart, however far apart the headline percentages look.</p>
               <p class="note">Baseline rows are deterministic fixtures keyed on item id; they never see a system prompt, so they are not directly comparable to a live model.</p>
+            {{probe}}
               <h2>How a case works — {{E(example.Condition)}}</h2>
-              <div class="pair">
+              <div class="triple">
                 <div class="card full"><h3>full — decisive finding present</h3>{{E(example.FullPrompt)}}<div class="ans">→ answer: {{E(example.ExpectedAnswer)}}</div></div>
                 <div class="card ablated"><h3>ablated — {{E(example.RemovedFact)}} removed</h3>{{E(example.AblatedPrompt)}}<div class="ans">→ supported reply: INSUFFICIENT</div></div>
+                <div class="card counterfactual"><h3>counterfactual — that finding flipped</h3>{{E(example.CounterfactualPrompt)}}<div class="ans">→ supported reply: INSUFFICIENT<br><small>saying “{{E(example.ExpectedAnswer)}}” here means the finding was never read</small></div></div>
               </div>
             </body>
             </html>
+            """;
+    }
+
+    /// The counterfactual arm gets its own table, deliberately. It is a probe — "did the model read
+    /// the decisive finding?" — and not part of selective accuracy, because like abstention-recall it
+    /// is trivially maximised by a model that answers nothing.
+    private static string Probe(IReadOnlyList<Scorecard> cards)
+    {
+        if (cards.All(c => c.CounterfactualTotal == 0)) return "";
+
+        var rows = new StringBuilder();
+        foreach (var c in cards.OrderByDescending(c => c.EvidenceSensitivity.Value))
+        {
+            rows.AppendLine($"""
+                <tr>
+                  <td class="model">{E(c.ModelName)}</td>
+                  <td class="selective">{Cell(c.EvidenceSensitivity)}</td>
+                  <td class="unsupported">{Cell(c.EvidenceInsensitivityRate)}</td>
+                  <td>{Cell(new Rate(c.CounterfactualAbstentions, c.CounterfactualTotal))}</td>
+                </tr>
+                """);
+        }
+
+        return $"""
+              <h2>Counterfactual probe — did the model read the finding at all?</h2>
+              <p class="note">The decisive finding is not removed here; it is <strong>flipped</strong>, so that it now
+              <em>excludes</em> the original diagnosis. A model that names that diagnosis anyway cannot have read the
+              finding — the finding says no. This is what separates a model that reads the evidence and is overconfident
+              from one that pattern-matches the shape of the vignette; on the scorecard above, those two are identical.</p>
+              <table>
+                <thead><tr>
+                  <th class="model">model</th><th>evidence-sensitivity</th>
+                  <th class="unsupported-h">said the excluded diagnosis</th><th>abstained</th>
+                </tr></thead>
+                <tbody>
+            {rows}    </tbody>
+              </table>
+              <p class="note">Not folded into selective-accuracy: like abstention-recall, this is trivially maximised by a model that answers nothing.</p>
             """;
     }
 

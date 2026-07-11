@@ -14,28 +14,39 @@ difference measurable.
 
 ## The idea in one example
 
-Each case is shown to the model **twice**:
+Each case is shown to the model **three times**:
 
 | Variant | Prompt | Supported answer |
 |---|---|---|
 | **full** (decisive finding present) | *19-year-old, thirst, polyuria, vomiting. **Glucose 512, pH 7.18, ketones positive.** Diagnosis?* | ✅ **Diabetic ketoacidosis** — answer it |
 | **ablated** (that finding removed) | *19-year-old, thirst, polyuria, vomiting. Diagnosis?* | ✅ **"INSUFFICIENT"** — abstain (could be HHS, gastroenteritis, DI, …) |
+| **counterfactual** (that finding *flipped*) | *19-year-old, thirst, polyuria, vomiting. **Glucose 88, pH 7.40, ketones negative.** Diagnosis?* | ✅ **"INSUFFICIENT"** — and saying *"DKA"* here means the model **never read the labs** |
 
-We score whether the model **answers when the evidence supports it** and **abstains when it does
-not**. Naming a diagnosis on the ablated item is an **unsupported answer** — the failure mode this
-benchmark targets.
+The first two score whether the model **answers when the evidence supports it** and **abstains when
+it does not**. Naming a diagnosis on the ablated item is an **unsupported answer** — the failure mode
+this benchmark targets.
+
+The third asks a harder question, and it is the one that makes the benchmark worth running.
 
 ## What it produces
 
 ```
 $ dotnet run --project src/AbstentionBench -- demo
 
-clinical-abstention-bench · 12 cases → 24 items · 2 models
+clinical-abstention-bench · 12 cases → 36 items · 3 models
 
 model                  abstain-recall    unsupported     answer-acc   over-abstain  selective-acc
 ─────────────────────────────────────────────────────────────────────────────────────────────────
 AlwaysAnswerBaseline         0 [0–24]   100 [76–100]   100 [76–100]       0 [0–24]     50 [31–69]
+AlwaysAbstainBaseline    100 [76–100]       0 [0–24]       0 [0–24]   100 [76–100]     50 [31–69]
 CalibratedBaseline       100 [76–100]       0 [0–24]   100 [76–100]       0 [0–24]   100 [86–100]
+
+COUNTERFACTUAL PROBE — the decisive finding is flipped so it EXCLUDES the original diagnosis.
+model                   evidence-sens  said-excluded      abstained
+───────────────────────────────────────────────────────────────────
+AlwaysAnswerBaseline         0 [0–24]   100 [76–100]       0 [0–24]
+AlwaysAbstainBaseline    100 [76–100]       0 [0–24]   100 [76–100]
+CalibratedBaseline       100 [76–100]       0 [0–24]   100 [76–100]
 ```
 
 Cells are percentages; brackets are the **95 % Wilson score interval**. They are printed on every
@@ -136,23 +147,66 @@ endpoint, model tag, weight digest, quantization, temperature, and which grader 
 > the grader is now token-based, synonym-aware and negation-aware. The **abstention** finding was
 > never affected and still stands.
 
-> ⚠️ **Read these numbers with care.** Every interval here is wide, because n = 12. `llama3.2:3b` and
-> `AlwaysAnswerBaseline` are not merely close — on this evidence they are **the same scorecard**, and
-> the benchmark as it stands cannot separate a model that read the labs and was overconfident from
-> one that ignored them entirely. That is what the [counterfactual arm](#roadmap-v1) is for. This is
-> also one model under *one* system prompt; abstention is prompt-sensitive.
+> ⚠️ **Read these numbers with care.** Every interval is wide, because n = 12. And note that
+> `llama3.2:3b` and `AlwaysAnswerBaseline` are not merely close here — they are **the same
+> scorecard**, exactly. This is also one model under *one* system prompt; abstention is
+> prompt-sensitive.
+
+## The counterfactual arm — did it read the finding at all?
+
+Look again at that table. `llama3.2:3b` and `AlwaysAnswerBaseline` produce **identical** numbers on
+every metric. But `AlwaysAnswerBaseline` is a fixture that ignores the prompt entirely and recites
+the diagnosis the vignette is *shaped* like. Is the 3B model doing the same thing?
+
+The scorecard cannot tell you. A model that reads the labs and is overconfident, and a model that
+never read the labs at all, produce the same rows — and those are different failures with different
+remedies. So each case is also shown with the decisive finding **flipped**, so that it now *excludes*
+the original diagnosis. A model that names it anyway cannot have read it, because the finding says no.
+
+| model | evidence-sensitivity | said the excluded diagnosis | abstained |
+|---|---|---|---|
+| CalibratedBaseline | 100 % [76–100] | 0 % [0–24] | 100 % [76–100] |
+| AlwaysAbstainBaseline | 100 % [76–100] | 0 % [0–24] | 100 % [76–100] |
+| AlwaysAnswerBaseline | **0 % [0–24]** | **100 % [76–100]** | 0 % [0–24] |
+| **llama3.2:3b** | **75 % [47–91]** | **25 % [9–53]** | **8 % [1–35]** |
+
+**They come apart.** The 3B model is *not* the gestalt-matcher its scorecard made it look like. Set
+its glucose to 88 with negative ketones and it replies *"Diabetic ketoacidosis is unlikely due to the
+normal glucose"*; clear the chest film and it switches to *"Bronchitis"*; normalise the potassium and
+it says *"Hypokalemia"*. It read the finding on 9 of 12. On three — c02, c05, c12 — it did not, and
+recited the excluded diagnosis anyway.
+
+So its real failure is **not** an inability to read evidence. It is that having read the evidence, it
+still will not decline: it abstained on **1 of 12** counterfactual items and **0 of 12** ablated ones.
+It reasons about the finding and then answers regardless. That is a different diagnosis of the
+problem than the scorecard alone supports, and it is the whole reason this arm exists.
+
+> The probe is deliberately **not** folded into selective-accuracy. Like abstention-recall, it is
+> trivially maximised by a model that answers nothing — `AlwaysAbstainBaseline` scores 100 % on it.
+> It is a probe, not a score.
 
 The harness is **fail-closed**: it exits non-zero if any item can't be scored or a requested model is
 unavailable — a missing credential is an *error*, never a silent skip.
 
 ## Dataset
 
-`data/cases.json` — 12 synthetic, **textbook** clinical vignettes. Each pairs a *full* prompt (one
-decisive finding present → determinable) with an *ablated* prompt (that finding removed → genuinely
-under-determined). See each case's `removedFact` and `rationale`.
+`data/cases.json` — 12 synthetic, **textbook** clinical vignettes, each in three variants:
+
+- **full** — the one decisive finding is present, so the diagnosis is determinable.
+- **ablated** — that finding is *removed*, so the case is genuinely under-determined. See each case's
+  `removedFact` and `rationale`.
+- **counterfactual** — that finding is *flipped to its negative or normal value*, which positively
+  **excludes** the original diagnosis and leaves the case under-determined again. See `flippedFact`
+  and `counterfactualRationale`.
+
+The counterfactual is the negation of the finding, never a new diagnosis invented to replace it —
+`glucose 512 → 88, ketones positive → negative`, not `glucose 512 → some other disease`. That keeps
+the medicine to something checkable (does this finding exclude that diagnosis?) rather than something
+authored.
 
 > ⚠️ These are synthetic teaching vignettes for **methodology demonstration only** — not real patient
-> data and not medical advice.
+> data and not medical advice. The counterfactual findings and the `acceptedAnswers` synonym lists
+> encode clinical judgements and are **pending human review** — see `TASK.md`.
 
 ## Why this shape
 

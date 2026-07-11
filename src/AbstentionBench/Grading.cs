@@ -73,7 +73,7 @@ public sealed class LexicalGrader : IGrader
         ["rule", "out"], ["ruled", "out"], ["rules", "out"], ["ruling", "out"],
         ["exclude"], ["excludes"], ["excluded"], ["excluding"],
         ["rather", "than"], ["instead", "of"], ["as", "opposed", "to"], ["versus"], ["vs"],
-        ["other", "than"], ["less", "likely"]
+        ["other", "than"], ["less", "likely"], ["against"], ["argue", "against"], ["argues", "against"]
     ];
 
     /// Idioms where a negation token is in fact an affirmation — "no doubt this is DKA" asserts DKA.
@@ -118,8 +118,15 @@ public sealed class LexicalGrader : IGrader
             throw new InvalidDataException(
                 $"Model returned an empty reply for item '{item.Key}'. An unscoreable item is an error, not a silent zero.");
 
+        // Abstention is tested FIRST, and the order is load-bearing. A reply that declines while
+        // mentioning the original diagnosis in passing — "INSUFFICIENT; the labs now argue against
+        // DKA" — has read the finding perfectly. Testing for the excluded answer first would name
+        // that evidence-insensitive on the strength of the word "DKA" appearing.
         if (IsAbstention(response))
             return item.MustAbstain ? Outcome.CorrectAbstention : Outcome.OverAbstention;
+
+        if (item.Variant == Variant.Counterfactual && Asserts(response, item.ExcludedForms))
+            return Outcome.EvidenceInsensitive;
 
         if (item.MustAbstain)
             return Outcome.UnsupportedAnswer;
@@ -161,6 +168,11 @@ public sealed class LexicalGrader : IGrader
             .Where(t => t.Length > 0)
             .ToList();
 
+        // Tokens that belong to some accepted form of the SAME diagnosis. A reply often restates it as
+        // an appositive — "Diabetic ketoacidosis (DKA) is unlikely" — and the restatement must not be
+        // allowed to shield the diagnosis from a negation that plainly applies to it.
+        var restatement = needles.SelectMany(n => n).ToHashSet(StringComparer.Ordinal);
+
         foreach (var clause in Clauses(response))
         {
             var tokens = Tokenize(clause);
@@ -168,7 +180,7 @@ public sealed class LexicalGrader : IGrader
             {
                 for (var i = 0; i + needle.Length <= tokens.Length; i++)
                 {
-                    if (Matches(tokens, needle, i) && !IsNegated(tokens, i, i + needle.Length))
+                    if (Matches(tokens, needle, i) && !IsNegated(tokens, i, i + needle.Length, restatement))
                         return true;
                 }
             }
@@ -188,8 +200,8 @@ public sealed class LexicalGrader : IGrader
 
     /// Does a negation cue reach this match from within the same clause? Negation arrives from either
     /// side: "not DKA" precedes it, "DKA is excluded" follows it.
-    private static bool IsNegated(string[] tokens, int matchStart, int matchEnd)
-        => NegatedFromTheLeft(tokens, matchStart) || NegatedFromTheRight(tokens, matchEnd);
+    private static bool IsNegated(string[] tokens, int matchStart, int matchEnd, IReadOnlySet<string> restatement)
+        => NegatedFromTheLeft(tokens, matchStart) || NegatedFromTheRight(tokens, matchEnd, restatement);
 
     /// "not DKA", "rather than DKA", "cannot rule out DKA".
     private static bool NegatedFromTheLeft(string[] tokens, int matchStart)
@@ -209,17 +221,18 @@ public sealed class LexicalGrader : IGrader
         return false;
     }
 
-    /// "DKA is excluded", "septic arthritis cannot be ruled out". Only linking tokens may sit between
-    /// the diagnosis and the negation — the moment some other word intervenes, the negation is about
-    /// something else and the scan stops.
-    private static bool NegatedFromTheRight(string[] tokens, int matchEnd)
+    /// "DKA is excluded", "septic arthritis cannot be ruled out". Only linking tokens — or a
+    /// restatement of the same diagnosis, as in "Diabetic ketoacidosis (DKA) is unlikely" — may sit
+    /// between the diagnosis and the negation. The moment some other word intervenes, the negation is
+    /// about something else and the scan stops.
+    private static bool NegatedFromTheRight(string[] tokens, int matchEnd, IReadOnlySet<string> restatement)
     {
         var limit = Math.Min(tokens.Length, matchEnd + NegationWindow);
 
         for (var i = matchEnd; i < limit; i++)
         {
             if (CueAt(tokens, i)) return true;
-            if (!LinkingTokens.Contains(tokens[i])) return false;
+            if (!LinkingTokens.Contains(tokens[i]) && !restatement.Contains(tokens[i])) return false;
         }
         return false;
     }

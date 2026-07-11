@@ -12,39 +12,69 @@ public sealed record BenchCase(
     string Condition,
     string FullPrompt,
     string AblatedPrompt,
+    string CounterfactualPrompt,
     string ExpectedAnswer,
     string RemovedFact,
     string Rationale,
-    IReadOnlyList<string>? AcceptedAnswers = null);
+    IReadOnlyList<string>? AcceptedAnswers = null,
+    string? FlippedFact = null,
+    string? CounterfactualRationale = null);
 
 /// The on-disk shape of data/cases.json.
 public sealed record CaseFile(string Note, List<BenchCase> Cases);
 
-public enum Variant { Full, Ablated }
+/// The three ways one vignette is shown to a model.
+///
+/// `Full` and `Ablated` ask "does it answer when it can, and decline when it cannot?".
+/// `Counterfactual` asks a different and harder question: **did it read the decisive finding at all?**
+/// A model that ignores the labs and pattern-matches the shape of the vignette scores exactly like a
+/// model that reads them and is merely overconfident — 100 % answer accuracy, 100 % unsupported
+/// answers. That is llama3.2:3b's scorecard, and it is also AlwaysAnswerBaseline's. Those are
+/// different failure modes with different remedies, and only the counterfactual arm separates them.
+public enum Variant { Full, Ablated, Counterfactual }
 
 /// One scored unit: a prompt shown to a model plus the answer the evidence supports.
-/// A `Full` item is answerable; an `Ablated` item must be abstained on.
+///  - `Full`: answerable.
+///  - `Ablated`: the decisive finding is gone, so it must be abstained on.
+///  - `Counterfactual`: the decisive finding is FLIPPED and now excludes the original diagnosis, so it
+///    must also be abstained on — and `ExcludedAnswers` names what the model must NOT say.
 public sealed record Item(
     string CaseId,
     Variant Variant,
     string Prompt,
     string GroundTruth,
     bool MustAbstain,
-    IReadOnlyList<string>? AcceptedAnswers = null)
+    IReadOnlyList<string>? AcceptedAnswers = null,
+    IReadOnlyList<string>? ExcludedAnswers = null)
 {
     public string Key => $"{CaseId}:{VariantName}";
 
-    public string VariantName => Variant == Variant.Full ? "full" : "ablated";
+    public string VariantName => Variant switch
+    {
+        Variant.Full => "full",
+        Variant.Ablated => "ablated",
+        Variant.Counterfactual => "counterfactual",
+        _ => throw new ArgumentOutOfRangeException(nameof(Variant))
+    };
 
     /// Every surface form that counts as naming the supported answer: the canonical one plus the
     /// case's accepted synonyms.
     public IReadOnlyList<string> AcceptedForms => [GroundTruth, .. AcceptedAnswers ?? []];
 
-    /// Every case yields exactly two items: the answerable one and the must-abstain one.
+    /// Surface forms the evidence now rules OUT. Saying one of these on a counterfactual item means
+    /// the model cannot have read the finding — the finding says no.
+    public IReadOnlyList<string> ExcludedForms => ExcludedAnswers ?? [];
+
+    /// Every case yields three items: the answerable one, and the two that must be declined — one
+    /// because the evidence is absent, one because the evidence actively contradicts.
     public static IEnumerable<Item> FromCase(BenchCase c)
     {
+        IReadOnlyList<string> originalDiagnosis = [c.ExpectedAnswer, .. c.AcceptedAnswers ?? []];
+
         yield return new Item(c.Id, Variant.Full, c.FullPrompt, c.ExpectedAnswer, MustAbstain: false, c.AcceptedAnswers);
         yield return new Item(c.Id, Variant.Ablated, c.AblatedPrompt, "INSUFFICIENT", MustAbstain: true);
+        yield return new Item(c.Id, Variant.Counterfactual, c.CounterfactualPrompt, "INSUFFICIENT", MustAbstain: true,
+            AcceptedAnswers: null, ExcludedAnswers: originalDiagnosis);
     }
 }
 

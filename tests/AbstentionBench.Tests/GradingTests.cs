@@ -87,6 +87,26 @@ public class LexicalGraderTests
     public void Asserts_TrueWhenTheFollowingNegationIsAboutADifferentDiagnosis(string response)
         => Assert.True(Grader.Asserts(response, ["STEMI"]));
 
+    /// A live bug, caught by reading llama3.2:3b's counterfactual transcripts. The model replied
+    /// "Diabetic ketoacidosis (DKA) is unlikely due to normal glucose" — it had read the labs exactly
+    /// right — and the grader convicted it of naming the excluded diagnosis. The parenthetical
+    /// restatement sat between the diagnosis and the negation and blocked the forward scan. An
+    /// appositive naming the SAME diagnosis must not shield it from a negation that plainly applies.
+    [Theory]
+    [InlineData("Diabetic ketoacidosis (DKA) is unlikely due to the normal glucose.", "diabetic ketoacidosis", "DKA")]
+    [InlineData("Urinary Tract Infection (UTI) - unlikely.", "urinary tract infection", "UTI")]
+    [InlineData("Acute ST-Elevation Myocardial Infarction (STEMI) is excluded.", "ST-elevation myocardial infarction", "STEMI")]
+    public void Asserts_FalseWhenAnAppositiveRestatementPrecedesTheNegation(string response, params string[] forms)
+        => Assert.False(Grader.Asserts(response, forms));
+
+    /// ...but the restatement must not become a licence to skip arbitrary words. The negation still
+    /// has to be about the diagnosis, not about something further down the sentence.
+    [Fact]
+    public void Asserts_TrueWhenARestatementIsFollowedByAnAssertion()
+        => Assert.True(Grader.Asserts(
+            "Diabetic ketoacidosis (DKA) is the diagnosis; hyperosmolar state is excluded.",
+            ["diabetic ketoacidosis", "DKA"]));
+
     [Fact]
     public void Asserts_TrueWhenANegationWordIsPartOfAnAffirmingIdiom()
         => Assert.True(Grader.Asserts("No doubt this is diabetic ketoacidosis.", ["diabetic ketoacidosis"]));
