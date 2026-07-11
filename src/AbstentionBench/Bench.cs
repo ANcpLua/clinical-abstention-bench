@@ -77,24 +77,12 @@ public static class Bench
         return selected;
     }
 
-    /// Load the deterministic demo models from data/demo-responses.json.
-    public static List<IModel> LoadDemoModels(string dataDir)
-    {
-        var path = Path.Combine(dataDir, "demo-responses.json");
-        using var doc = JsonDocument.Parse(File.ReadAllText(path));
-        var models = new List<IModel>();
-        foreach (var prop in doc.RootElement.EnumerateObject())
-        {
-            if (prop.Name.StartsWith('_')) continue; // skip _note
-            var replies = new Dictionary<string, string>();
-            foreach (var reply in prop.Value.EnumerateObject())
-                replies[reply.Name] = reply.Value.GetString() ?? "";
-            models.Add(new ScriptedModel(prop.Name, replies));
-        }
-        if (models.Count == 0)
-            throw new InvalidDataException($"{path} defined no models.");
-        return models;
-    }
+    /// Construct the three analytical policies from explicit rules over the case inventory. Policies
+    /// that need labels declare that access in provenance; no second response dataset is maintained.
+    public static List<IModel> CreateReferenceModels(IReadOnlyList<BenchCase> cases)
+        => Enum.GetValues<ReferencePolicy>()
+            .Select(policy => (IModel)new ReferencePolicyModel(policy, cases))
+            .ToList();
 
     /// Narrow a run to the models named by `--only` (matched case-insensitively on IModel.Name).
     /// An empty selection means "run everything". Fail-closed: a name that matches no model is an
@@ -132,7 +120,7 @@ public static class Bench
         var results = new List<ItemResult>(items.Count);
         foreach (var item in items)
         {
-            var response = await model.AnswerAsync(item, ct);
+            var response = await model.AnswerAsync(new ModelInput(item.Key, item.Prompt), ct);
             results.Add(new ItemResult(model.Name, item, model.SystemPrompt, response, grader.Score(item, response)));
         }
         return results;

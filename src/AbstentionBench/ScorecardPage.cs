@@ -14,10 +14,8 @@ public static class ScorecardPage
         int itemCount,
         IReadOnlyList<Scorecard> cards,
         BenchCase example,
-        IReadOnlySet<string>? baselineNames = null)
+        IReadOnlySet<string> baselineNames)
     {
-        baselineNames ??= new HashSet<string>();
-
         var rows = new StringBuilder();
         foreach (var c in cards.OrderByDescending(c => c.SelectiveAccuracy.Value))
         {
@@ -86,7 +84,7 @@ public static class ScorecardPage
               </table>
               <p class="note">unsupported — of the items where the decisive finding was removed, the fraction the model answered anyway. This is the failure mode the benchmark targets.</p>
               <p class="note">Brackets are the <strong>95 % Wilson score interval</strong>. With {{caseCount}} cases they are wide: where two models' intervals overlap, this benchmark cannot tell them apart, however far apart the headline percentages look.</p>
-              <p class="note">Dimmed rows are deterministic <strong>fixtures</strong>, keyed on item id. They never see a system prompt, so they are reference points, not competitors — do not read them as a leaderboard against the live model.</p>
+              <p class="note">Dimmed rows are deterministic <strong>reference policies</strong>. They never see a system prompt; provenance declares any label access, and the label oracle is perfect by construction. They are analytical reference points rather than competitors.</p>
               <p class="note">A live model's row is named <code>model @ prompt</code>. Abstention is <strong>prompt-sensitive</strong>: a rate measured under one system prompt is a claim about that prompt-and-model pair, not about the model. Sweep them with <code>--prompt all</code>.</p>
             {{probe}}
               <h2>How a case works — {{E(example.Condition)}}</h2>
@@ -138,14 +136,13 @@ public static class ScorecardPage
             """;
     }
 
-    /// Baseline rows are dimmed and tagged. They are deterministic fixtures keyed on item id that
-    /// never see a system prompt — reference points, not competitors, and the page should not invite
-    /// a reader to rank a live model against them as though the comparison were like-for-like.
+    /// Baseline rows are dimmed and tagged. They are deterministic, programmatic policies that never
+    /// see a system prompt, so the page must not present them as like-for-like competitors.
     private static string RowClass(Scorecard c, IReadOnlySet<string> baselineNames)
         => baselineNames.Contains(c.ModelName) ? "baseline" : "live";
 
     private static string BaselineTag(Scorecard c, IReadOnlySet<string> baselineNames)
-        => baselineNames.Contains(c.ModelName) ? """<span class="tagline">fixture · no system prompt</span>""" : "";
+        => baselineNames.Contains(c.ModelName) ? """<span class="tagline">programmatic reference · no system prompt</span>""" : "";
 
     /// A rate is never shown without its interval. At n = 12 the point estimate on its own is the
     /// most misleading thing this page could print.

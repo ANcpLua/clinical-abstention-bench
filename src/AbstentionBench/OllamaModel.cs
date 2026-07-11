@@ -85,7 +85,7 @@ public sealed class OllamaModel : IModel
         _preflighted = true;
     }
 
-    public async Task<string> AnswerAsync(Item item, CancellationToken ct = default)
+    public async Task<string> AnswerAsync(ModelInput input, CancellationToken ct = default)
     {
         await PreflightAsync(ct);
 
@@ -97,7 +97,7 @@ public sealed class OllamaModel : IModel
             messages = new object[]
             {
                 new { role = "system", content = _prompt.Text },
-                new { role = "user", content = item.Prompt }
+                new { role = "user", content = input.Prompt }
             }
         });
 

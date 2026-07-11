@@ -117,15 +117,29 @@ public class RateTests
     [Fact]
     public void Scorecard_ExposesEveryRateWithAnInterval()
     {
-        var card = new Scorecard("m",
-            AblatedTotal: 12, CorrectAbstentions: 12, UnsupportedAnswers: 0,
-            FullTotal: 12, CorrectAnswers: 12, WrongAnswers: 0, OverAbstentions: 0);
+        var labelOracle = RepositoryBenchmark.Policy(ReferencePolicy.LabelOracle);
+        var card = RepositoryBenchmark.Scorecards()[labelOracle.Name];
+        var armTotal = RepositoryBenchmark.Cases.Count;
 
-        Assert.Equal(1.0, card.AbstentionRecall.Value);
-        Assert.Equal(0.7575, card.AbstentionRecall.Lower, precision: 4);
-        Assert.Equal(0.0, card.UnsupportedAnswerRate.Value);
-        Assert.Equal(0.2425, card.UnsupportedAnswerRate.Upper, precision: 4);
-        Assert.Equal(24, card.SelectiveAccuracy.Total); // selective accuracy spans both halves
-        Assert.Equal(0.8620, card.SelectiveAccuracy.Lower, precision: 4);
+        var expectedRates = new (Rate Rate, int Successes, int Total)[]
+        {
+            (card.AbstentionRecall, armTotal, armTotal),
+            (card.UnsupportedAnswerRate, 0, armTotal),
+            (card.AnswerAccuracy, armTotal, armTotal),
+            (card.OverAbstentionRate, 0, armTotal),
+            (card.SelectiveAccuracy, armTotal * 2, armTotal * 2),
+            (card.EvidenceSensitivity, armTotal, armTotal),
+            (card.EvidenceInsensitivityRate, 0, armTotal)
+        };
+
+        foreach (var (rate, successes, total) in expectedRates)
+        {
+            var expectedInterval = Wilson.Interval(successes, total);
+            Assert.Equal(successes, rate.Successes);
+            Assert.Equal(total, rate.Total);
+            Assert.Equal(expectedInterval.Lower, rate.Lower);
+            Assert.Equal(expectedInterval.Upper, rate.Upper);
+            Assert.InRange(rate.Value, rate.Lower, rate.Upper);
+        }
     }
 }

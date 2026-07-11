@@ -32,14 +32,14 @@ jobs:
       - name: Demo run (offline, no credentials)
         run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo
 
-      # The gate is what a downstream user would put in their own CI, so exercise it in BOTH
-      # directions here — it cannot silently rot back into "always fails" or "never enforces".
-      - name: Gate passes for a calibrated model
+      # Exercise the passing path and both failure directions so the gate cannot silently rot into
+      # "always fails" or "never enforces". The label oracle passes by construction from case labels.
+      - name: Gate passes for the label oracle policy
         run: |
           dotnet run -c Release --no-build --project src/AbstentionBench -- \
-            demo --only CalibratedBaseline --gate 0.9 --gate-answer-acc 0.9
+            demo --only LabelOracleBaseline --gate 0.9 --gate-answer-acc 0.9
 
-      - name: Gate fails for a model that never abstains
+      - name: Gate fails for the always-answer policy
         run: |
           if dotnet run -c Release --no-build --project src/AbstentionBench -- \
                demo --only AlwaysAnswerBaseline --gate 0.9; then
@@ -48,9 +48,9 @@ jobs:
           fi
           echo "gate correctly failed the run"
 
-      # Abstention-recall is trivially maximised by never answering. A recall-only gate is passed by a
-      # model that has simply learned to say nothing, so the answer-accuracy floor must catch it.
-      - name: Gate fails for a model that always abstains
+      # Abstention-recall is trivially maximised by never answering. A recall-only gate is passed by
+      # the always-abstain policy, so the answer-accuracy floor must catch it.
+      - name: Gate fails for the always-abstain policy
         run: |
           dotnet run -c Release --no-build --project src/AbstentionBench -- \
             demo --only AlwaysAbstainBaseline --gate 0.9 \

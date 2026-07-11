@@ -3,9 +3,8 @@ using ClinicalAbstentionBench;
 
 // clinical-abstention-bench — selective prediction on clinical vignettes.
 //
-// Each case is shown twice: once with the decisive finding present (the model SHOULD answer)
-// and once with it removed (the model SHOULD abstain). We score answering-when-supported
-// against answering-when-unsupported.
+// Each case is shown three ways: with the decisive finding present (answer), removed (abstain),
+// and flipped to exclude the original diagnosis (abstain and test evidence sensitivity).
 //
 // Fail-closed, mirroring the ancplua.evaluation engine: the run exits 0 only when every item
 // was scored and the report was written. A requested-but-unavailable model is an ERROR (exit 1),
@@ -20,8 +19,7 @@ try
     {
         "demo" => await RunBenchAsync(opts, live: false),
         "ollama" => await RunBenchAsync(opts, live: true),
-        "llm" => RunLlm(opts),
-        _ => Usage()
+        _ => Usage(opts.Mode)
     };
 }
 catch (Exception ex)
@@ -38,7 +36,7 @@ async Task<int> RunBenchAsync(Args o, bool live)
     var prompts = Bench.SelectPrompts(Bench.LoadPrompts(dataDir), o.Prompts);
 
     var available = new List<IModel>();
-    if (!o.NoBaselines) available.AddRange(Bench.LoadDemoModels(dataDir));
+    if (!o.NoBaselines) available.AddRange(Bench.CreateReferenceModels(cases));
 
     // One run per (model, prompt): the system prompt is a controlled variable, so sweeping it is how
     // you find out how much of an unsupported-answer rate belongs to the prompt and not to the model.
@@ -95,28 +93,13 @@ async Task<int> RunBenchAsync(Args o, bool live)
     }.Where(s => s is not null));
 }
 
-int RunLlm(Args o)
-{
-    // Live adapter (Anthropic / OpenAI via Microsoft.Extensions.AI) lands in v1. Until then the
-    // 'llm' mode fails closed rather than pretending — matching the engine's "missing credential = ERROR".
-    var key = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
-              ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-    if (string.IsNullOrEmpty(key))
-    {
-        Console.Error.WriteLine("ERROR: 'llm' needs ANTHROPIC_API_KEY (or OPENAI_API_KEY). Failing closed — run 'demo' for the no-credential path.");
-        return 1;
-    }
-    Console.Error.WriteLine("ERROR: the live LLM adapter is not wired yet (v1). Run 'demo' for now — see TASK.md.");
-    return 1;
-}
-
 static void PrintTable(IReadOnlyList<Scorecard> cards, IReadOnlyList<IModel> models)
 {
     var isBaseline = models.ToDictionary(m => m.Name, m => m.IsBaseline);
     var width = Math.Max(22, cards.Max(c => c.ModelName.Length) + 1);
 
-    // Baselines are separated from live models by a rule, because they are not competitors: a fixture
-    // is keyed on item id and never sees a system prompt at all.
+    // Programmatic reference policies are separated from live models because they are analytical
+    // reference points, not competitors, and never see a system prompt.
     void Rows(Func<Scorecard, string> row)
     {
         foreach (var group in new[] { false, true })
@@ -152,15 +135,17 @@ static void PrintTable(IReadOnlyList<Scorecard> cards, IReadOnlyList<IModel> mod
     Console.WriteLine("This is a probe, not part of selective-accuracy: it is trivially maxed by a model that answers nothing.");
 }
 
-static int Usage()
+static int Usage(string? unknownMode = null)
 {
+    if (unknownMode is not null)
+        Console.Error.WriteLine($"ERROR: unknown mode '{unknownMode}'. Expected 'demo' or 'ollama'.");
+
     Console.WriteLine("""
         clinical-abstention-bench
 
         usage:
           dotnet run -- demo              run the offline baseline models (default, no credentials)
           dotnet run -- ollama            baselines + a real local LLM via Ollama (default llama3.2:3b)
-          dotnet run -- llm               run a live cloud model (needs ANTHROPIC_API_KEY; v1)
 
         flags:
           --data  <dir>          path to the data/ folder (auto-detected by default)
@@ -176,17 +161,17 @@ static int Usage()
                                  one). Abstention is prompt-sensitive, so a rate measured under one
                                  prompt is a claim about that PROMPT-AND-MODEL PAIR, not the model.
                                  The baselines never see a system prompt and are unaffected.
-          --no-baselines         drop the deterministic fixture models from the run
+          --no-baselines         drop the programmatic reference policies from the run
           --out   <file>         report path (default: report.json)
           --html  <file>         also write a self-contained HTML report
           --model <name>         ollama model tag (default: llama3.2:3b)
 
         examples:
-          dotnet run -- demo --only CalibratedBaseline --gate 0.9 --gate-answer-acc 0.9
+          dotnet run -- demo --only LabelOracleBaseline --gate 0.9 --gate-answer-acc 0.9
           dotnet run -- ollama --model llama3.2:3b --no-baselines --gate 0.9 --gate-answer-acc 0.9
           dotnet run -- ollama --prompt all --no-baselines   # how much of the rate is the prompt?
         """);
-    return 0;
+    return unknownMode is null ? 0 : 1;
 }
 
 /// Tiny arg holder.

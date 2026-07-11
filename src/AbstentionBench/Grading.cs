@@ -206,6 +206,12 @@ public sealed class LexicalGrader : IGrader
     /// "not DKA", "rather than DKA", "cannot rule out DKA".
     private static bool NegatedFromTheLeft(string[] tokens, int matchStart)
     {
+        // A hyphenated diagnostic prefix tokenizes separately: "non-ST-elevation MI" contains the
+        // token sequence for "ST-elevation MI" but expressly negates it. Keep this adjacent-only so
+        // an unrelated phrase such as "non-specific presentation ... DKA" cannot negate a later
+        // diagnosis through the general five-token window.
+        if (matchStart > 0 && tokens[matchStart - 1] == "non") return true;
+
         var from = Math.Max(0, matchStart - NegationWindow);
 
         for (var i = from; i < matchStart; i++)

@@ -20,7 +20,7 @@ public enum Outcome
 }
 
 /// One item, one model, one reply — the auditable unit. `SystemPrompt` is the prompt that was in
-/// force when the reply was produced (null for a fixture, which never sees one), so a transcript
+/// force when the reply was produced (null for a reference policy, which never sees one), so a transcript
 /// entry is self-contained: everything needed to reproduce the score is on it.
 public sealed record ItemResult(
     string ModelName,

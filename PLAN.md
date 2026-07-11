@@ -1,113 +1,106 @@
-# Task: harden clinical-abstention-bench into a defensible benchmark
+# Plan: keep clinical-abstention-bench defensible
 
-You are working in `/Users/ancplua/clinical-abstention-bench` (.NET 10, C#, xUnit, warnings-as-errors, CI on GitHub Actions). This is a **selective-prediction benchmark**: it measures whether a clinical decision-support model abstains when the evidence in the prompt is insufficient to determine an answer, rather than only measuring accuracy. The vignettes are synthetic teaching cases for methodology demonstration — not patient data, not medical advice.
+This repository is a .NET 10 selective-prediction benchmark. Its engineering contract is
+fail-closed: every requested item must produce a score, every requested model must be available, and
+every requested gate must be enforced. Its clinical content is synthetic methodology data, not
+patient data or medical advice.
 
-The harness builds and its 15 tests pass. The problem is not engineering quality — it is that the benchmark's central claim (*llama3.2:3b produced an unsupported answer on 100% of ablated items*) does not currently survive scrutiny, because the scoring, the dataset construction, and the prompt all confound the result.
+## Operational sources of truth
 
-Fix that. Work through the items below **in order** — later items depend on earlier ones. Commit directly to `main` in logical commits, push, and keep CI green.
+- `data/cases.json` owns the twelve case labels, accepted forms, and three variants: `full`,
+  `ablated`, and `counterfactual`.
+- `data/prompts.json` owns the four system-prompt arms and the default selection.
+- `LexicalGrader` owns the current scoring semantics; its name travels with every report.
+- Committed files under `results/` are auditable run artifacts, not input data or a replacement for
+  the case and prompt files.
 
-## Vocabulary (already migrated — use these names, do not reintroduce the old ones)
+The case file is authoritative for program execution, but it is **not clinically canonical** until
+the human review in `TASK.md` is complete.
 
-Commit `3eca314` migrated the codebase to the standard selective-prediction vocabulary. The current names are:
+## Reference-policy architecture
 
-| concept | name in code |
-|---|---|
-| answering an item the evidence doesn't support | `Outcome.UnsupportedAnswer` / `Scorecard.UnsupportedAnswerRate` |
-| the two prompt variants | `Variant.Full` (answerable) / `Variant.Ablated` (must abstain) |
-| the ablated prompt on a case | `BenchCase.AblatedPrompt` (JSON key: `ablatedPrompt`) |
-| item keys in the fixtures | `c01:full`, `c01:ablated` |
-| overall "matched what the evidence supported" | `Scorecard.SelectiveAccuracy` |
-| the deterministic fixture models | `AlwaysAnswerBaseline`, `CalibratedBaseline` |
-| the HTML renderer | `ScorecardPage` (in `src/AbstentionBench/ScorecardPage.cs`) |
+The offline demo contains three deterministic policies generated from `data/cases.json`:
 
-Unchanged, already-standard: `abstention-recall`, `over-abstention`, `CorrectAbstention`, `counterfactual`, `coverage`, `risk`.
+| policy | construction | purpose |
+|---|---|---|
+| `AlwaysAnswerBaseline` | always returns the case's original diagnosis label | degenerate always-answer pole |
+| `AlwaysAbstainBaseline` | always returns `INSUFFICIENT INFORMATION` | degenerate always-decline pole |
+| `LabelOracleBaseline` | returns the supported label for each variant | label-defined target |
 
-**Do not** reintroduce "bluff", "BluffBot", "honesty", "degraded", or "the dangerous failure" anywhere — including in comments, commit messages, console output, or the README. The naming is deliberate: anthropomorphic metric names attribute intent to a model that has none, and they read as adversarial next to clinical text.
+`LabelOracleBaseline` is perfect by construction because it consults the labels. It demonstrates
+that the metrics and gate can represent the intended target; it does not demonstrate that the case
+labels, accepted forms, or counterfactual claims are clinically correct. Reference policies never
+receive a system prompt and must remain visually and textually separate from live-model results.
 
-## Constraints
+Live adapters receive only the item key and prompt. Ground-truth answers and scoring metadata must
+not enter an inference request. Ollama is the implemented live adapter. A cloud-provider adapter is
+only a possible future feature after a provider and contract are chosen; there is no cloud-model CLI
+mode today.
 
-- No new NuGet dependencies. Everything here is doable with the BCL.
-- Keep the fail-closed contract: an unscoreable item or an unavailable model is an error (exit 1), never a silent skip.
-- Keep `dotnet build -c Release` warning-free (warnings are errors in CI).
-- Every behavioral change gets a unit test. Do not let coverage regress.
-- Do NOT touch the medical content of `data/cases.json` except where item 5 explicitly says to. Vignette medicine is Alexander's call, not yours.
+## Metric and report invariants
 
----
+- Full items measure answer accuracy and over-abstention.
+- Ablated items measure abstention recall and unsupported-answer rate.
+- Selective accuracy covers the full and ablated arms only.
+- Counterfactual items form a separate evidence-sensitivity probe. They must not be folded into
+  selective accuracy, because that would make abstention the majority label and reward silence.
+- Every rate carries its count and 95 % Wilson score interval on console, JSON, and HTML surfaces.
+- Every report carries per-item prompts, raw responses, outcomes, the grader name, system prompt,
+  model provenance, and run timestamp.
+- Prompt sweeps preserve one result per model-and-prompt pair. Reference policies are unaffected by
+  all four prompt arms because they never receive a system prompt.
 
-## 1. Fix the `--gate` defect
+## Verification gates
 
-`RunDemoAsync` in `Program.cs` always loads the baseline models, and the gate then checks *every* model in the run. `AlwaysAnswerBaseline` has 0% abstention-recall by construction, so **`demo --gate 0.9` always exits 1**. The flag is unusable for its actual purpose (gating a real model's recall in CI), and the example has already been pulled from the README pending this fix.
+Run these after every behavioral or data-schema change:
 
-Add model selection — e.g. `--only <name>` (repeatable) and/or `--no-baselines`. Gate only the selected models. Add a test asserting the gate passes for a model above threshold and fails for one below, exercise the gate in CI so this cannot silently rot again, and restore the example to the README once it works.
+```bash
+dotnet build -c Release
+dotnet test -c Release --no-build
+dotnet run -c Release --no-build --project src/AbstentionBench -- demo
 
-## 2. Log per-item transcripts
+dotnet run -c Release --no-build --project src/AbstentionBench -- \
+  demo --only LabelOracleBaseline --gate 0.9 --gate-answer-acc 0.9
+```
 
-`report.json` currently contains aggregate counts only. Nobody — including you in three months — can audit *why* a model scored what it scored, and there is no committed evidence behind the README's llama3.2:3b table.
+CI must also prove both failure directions:
 
-Extend the JSON report with a per-item array: case id, variant, the exact prompt sent, the system prompt in force, the raw model response verbatim, and the scored `Outcome`. Add run provenance: UTC timestamp, Ollama base URL, model tag, and the model digest/sha if the API exposes it. Aggregates stay where they are; this is additive.
+- `AlwaysAnswerBaseline` fails an abstention-recall gate.
+- `AlwaysAbstainBaseline` passes a recall-only gate but fails when the answer-accuracy floor is added.
 
-Then regenerate the llama3.2:3b run and commit the transcript as a checked-in artifact (e.g. `results/llama3.2-3b.json`) so the README's claim is backed by evidence. Note `report.json` and `report.html` are gitignored — committed *result* artifacts need a path outside that ignore.
+Do not document a remembered test count; the executed test command is the evidence.
 
-## 3. Make the grader defensible
+## Construct validity — human decision required
 
-`Scoring.cs` grades by substring. Two concrete failures, both of which currently corrupt the llama numbers:
+> ⚠️ The twelve counterfactual findings, the accepted answer forms, and any narrower
+> `counterfactualExcludedAnswers` are pending human review. Green engineering checks and the label
+> oracle's perfect score do not constitute clinical sign-off.
 
-- `IsCorrect` is a bare substring containment test, so a model replying "STEMI" or "acute MI" to case c03 scores **wrong** against the expected `"ST-elevation myocardial infarction"`, while a reply containing "**not** diabetic ketoacidosis" scores **correct**. It is synonym-blind and negation-blind.
-- `IsAbstention` fires on any occurrence of `"insufficient"`, so the very common hedge *"there's insufficient data to be certain, but most likely DKA"* is scored as an abstention — meaning on an answerable (Full) item it books as over-abstention when the model in fact answered.
+The review must explicitly resolve:
 
-Do three things:
+- c03: a normal ECG negates STEMI, not all acute coronary syndromes; decide how replies such as
+  “unstable angina” and broader MI aliases should score.
+- c06: the flipped hot-joint case may still be septic and is an emergency; decide whether abstention
+  is the right benchmark target.
+- c10: the examination and normal appendix on CT conflict; decide whether under-determined is a
+  defensible label.
+- c11: the label depends on accepting the early-CT sensitivity premise.
+- c02, c05, and c12: these carry the reported evidence-insensitivity finding and require the hardest
+  review.
+- All ablated prompts: decide whether a competent clinician would genuinely decline, especially c08
+  and c12.
+- Forced-choice wording: decide whether to change the user prompts or retain `no-forced-choice` as a
+  controlled comparison.
 
-1. Add an `acceptedAnswers: []` array per case in `cases.json` (synonyms and abbreviations — "STEMI", "acute MI", "inferior STEMI" for c03, etc.) and match against those, not just the single canonical `expectedAnswer`. This is a schema change, not a medical-content change, so it is in scope.
-2. Make abstention detection resistant to hedging: an abstention marker followed by a committed diagnosis is an **answer**, not an abstention. Handle negation ("cannot rule out X" is not an answer of X).
-3. Put the grader behind an `IGrader` interface so an LLM-judge grader can be dropped in later without touching the harness. Do not build the judge now — just don't wall it out.
+Any prompt edit creates a new experimental condition and requires a new model run. A label or grader
+edit may permit rescoring an existing raw response, but the resulting report must remain bound to the
+exact case data, system prompt, and grader that produced the score.
 
-Unit-test every failure mode listed above explicitly.
+## Future work
 
-## 4. Report confidence intervals
-
-There are 12 ablated items. A 100% unsupported-answer rate on n=12 has a 95% Wilson interval of roughly [76%, 100%], and the README compares 50% vs 25% selective accuracy as though that gap were meaningful. At this n it is not.
-
-Compute a **Wilson score interval** for every rate on `Scorecard` (abstention-recall, unsupported-answer rate, answer-accuracy, over-abstention, selective-accuracy) and surface it in the console table, the JSON report, and `ScorecardPage` — formatted as e.g. `100% [76–100]`. Unit-test the Wilson maths against known values.
-
-## 5. Add an always-abstain baseline
-
-Abstention-recall — the headline metric — is trivially maximized to 100% by a model that abstains on everything. The benchmark *does* punish this (such a model lands at 50% selective accuracy, tying `AlwaysAnswerBaseline`), but nothing in the repo demonstrates it, so a reader has to take it on faith.
-
-Add a third deterministic baseline, `AlwaysAbstainBaseline`, to `data/demo-responses.json`, plus an integration test asserting it scores 100% abstention-recall, 0% answer-accuracy, and a selective accuracy equal to `AlwaysAnswerBaseline`'s. That test turns an implicit property of the metric into a demonstrated one.
-
-## 6. Add the counterfactual arm — the important one
-
-Today a model that **completely ignores the lab values** and pattern-matches the vignette gestalt scores 100% answer-accuracy on Full items and a 100% unsupported-answer rate on Ablated ones. That is exactly llama3.2:3b's scorecard shape. It is indistinguishable from a model that reads the evidence carefully and is merely overconfident — and those are different failure modes with different remedies.
-
-Introduce a third `Variant.Counterfactual` alongside `Full` and `Ablated`. The counterfactual prompt keeps the vignette but **flips the decisive finding so it points at a different diagnosis** (c01: glucose 512 → glucose 88 with negative ketones; c07: potassium 7.2 → 4.1 with a normal ECG; and so on). If a model still answers the original diagnosis, it never read the finding — its score on the Full arm was memorization, not reasoning.
-
-Scoring: on a counterfactual item, replying with the *original* diagnosis is a new outcome, `Outcome.EvidenceInsensitive`. Report an **evidence-sensitivity rate** per model. Wire it through `Item.FromCase`, the grader, `Scorecard`, all three report surfaces, and the baseline fixtures (this adds a `c01:counterfactual`-style key to every baseline in `demo-responses.json`).
-
-You will need to author the counterfactual finding for each of the 12 cases. Draft them, but flag clearly in `TASK.md` that — like the original vignettes — the counterfactual medicine is **pending Alexander's human review** and is not canonical until he signs off.
-
-## 7. Make the prompt a controlled variable
-
-The system prompt is hardcoded at `OllamaModel.cs:11-14`. Abstention behavior is strongly prompt-sensitive, so the current llama result is a claim about *one* prompt, not about the model.
-
-Lift the system prompt into configuration (`data/prompts.json`, with at least: abstention explicitly offered, abstention not mentioned, abstention strongly encouraged). Let `--prompt <name>` select one, record which was in force in the report, and support sweeping several so the report shows how much of the unsupported-answer rate is prompt-induced.
-
-The README already notes that `ScriptedModel` is a fixture keyed on item id and never sees a system prompt. Keep that caveat accurate as prompt handling changes, and consider visually separating baseline rows from live-model rows in `ScorecardPage`.
-
----
-
-## Out of scope — do not do these
-
-- Do not wire the live Anthropic/OpenAI adapter (`llm` mode stays stubbed and failing closed).
-- Do not build the LLM-judge grader — only make room for it (item 3.3).
-- Do not add AURC / ECE / risk-coverage curves.
-- Do not rewrite the medical content of the existing 12 vignettes.
-- Do not act on the two **construct-validity** items in TASK.md (whether the ablated cases are genuinely under-determined; whether the *"single most likely diagnosis?"* phrasing contradicts the abstention instruction). Those are flagged for Alexander's human review and are his call, not yours. If your work surfaces more evidence about them, add it to TASK.md rather than changing the vignettes.
-
-## Definition of done
-
-- `dotnet build -c Release` clean, `dotnet test` green, CI green.
-- No occurrence of the retired vocabulary anywhere in the repo.
-- The `--gate` flag works, is documented in the README again, and is exercised in CI.
-- `results/llama3.2-3b.json` exists with full per-item transcripts and provenance, and the README's llama table is regenerated from it — with confidence intervals, and with any number that turns out to have been a grader artifact rather than a model failure corrected and called out. Expect `answer-acc` to move: the v0 keyword matcher scores "STEMI" as wrong.
-- The README states honestly what the benchmark can and cannot claim at n=12.
-- `TASK.md` reflects the new state, with the counterfactual vignettes explicitly marked as awaiting human review.
+- Replace or complement the lexical grader with a validated semantic judge behind `IGrader`.
+- Expand to a larger, sourced, licensed, clinician-reviewed dataset.
+- Add risk-coverage curves once the sample supports them.
+- Sweep temperature as another controlled variable.
+- Consider a cloud-provider adapter only after its provider contract is concrete.
+- Package the harness as a `dotnet new` template.

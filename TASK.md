@@ -12,16 +12,17 @@ doesn't know?") is under-benchmarked. A confident wrong diagnosis is worse than 
 tell." Patient-safety-relevant, biomedical-center, and it reuses assets already built
 (`ancplua.evaluation.template`, `dicom-fhir-viewer`, the info-theory research framing).
 
-## Status: v1 complete & verified — OPEN FOR HUMAN REVIEW (do not auto-merge)
-Build + tests are green (116 tests). The **content and the construct** are what need a human check,
-and there is now materially more content to check than there was at v0 — see the two ⚠️ blocks below.
+## Status: v1 implemented — OPEN FOR HUMAN REVIEW (do not auto-merge)
+Build and test are required merge gates; do not substitute a remembered test count for running them.
+The **content and the construct** still need a human check, and there is materially more content to
+check than there was at v0 — see the ⚠️ block below.
 
 **The v0 headline did not survive v1.** Two of its three components turned out to be artifacts:
 
 | v0 claim | what it actually was |
 |---|---|
 | llama3.2:3b answer-accuracy **50 %** | a **substring-grader artifact**. 6 of 12 "wrong" answers were correct — one lost on a *hyphen* ("Iron deficiency anemia" vs "Iron-deficiency anemia"). Real value: **100 %**. |
-| llama3.2:3b **"bluffs on 100 % of ablated items"** | a **prompt artifact**. True under the default prompt; under `abstention-encouraged` the same model at temperature 0 abstains on **9 of 12**. It was never unable to decline — it was not asked to. |
+| llama3.2:3b produces unsupported answers on **100 % of ablated items** | a **prompt artifact**. True under the default prompt; under `abstention-encouraged` the same model at temperature 0 abstains on **9 of 12**. It was never unable to decline — it was not asked to. |
 | llama3.2:3b ≠ AlwaysAnswerBaseline | **false at v0** — after the grader fix their scorecards were *identical*. Only the new counterfactual arm separates them (75 % vs 0 % evidence-sensitivity). |
 
 What survives: on the default prompt, the model does answer every ablated item, and it *does* recite
@@ -33,18 +34,25 @@ transcripts behind them.
 - [x] Harness — load, run, score, fail-closed gate
 - [x] Metrics — abstention-recall, unsupported-answer rate, answer-accuracy, over-abstention,
       selective-accuracy, **evidence-sensitivity**, all with **95 % Wilson intervals**
-- [x] Three deterministic offline baselines (AlwaysAnswer / **AlwaysAbstain** / Calibrated) — no credentials
+- [x] Three deterministic, programmatic reference policies (AlwaysAnswer / **AlwaysAbstain** /
+      **LabelOracle**) — no credentials or second response dataset
 - [x] **Grader behind `IGrader`** — token-based, synonym-aware, negation- and hedge-aware
-- [x] **Per-item transcripts + run provenance** — every score auditable, committed under `results/`
+- [x] **Per-item transcripts + run provenance** — every live-model score auditable, committed under
+      `results/`; reference-policy rows are regenerated from case labels
 - [x] **System prompt as a controlled variable** (`data/prompts.json`, `--prompt <name>|all`)
 - [x] **`--gate` works** — `--only` / `--no-baselines` model selection, plus `--gate-answer-acc`
-- [x] 116 unit + integration tests, green (`dotnet test`)
+- [x] Unit + integration coverage for the dataset, grader, metrics, reports, policies and gate
 - [x] CI — build (warnings-as-errors), test, demo run, and the gate exercised in all three directions
 - [x] Terminology migrated to standard selective-prediction vocabulary (no adversarial/anthropomorphic naming)
 
-## Known defects
-- None open. The v0 `--gate` defect is fixed (model selection added; CI exercises pass, fail-on-recall,
-  and fail-on-accuracy). Two *limitations* are documented rather than fixed, deliberately:
+The reference policies are analytical controls, not model evaluations. In particular,
+`LabelOracleBaseline` returns the supported label for each variant and is therefore perfect by
+construction. Its score proves the scoring pipeline can express the intended target; it says nothing
+about whether the labels, vignettes, or counterfactual medicine are clinically valid.
+
+## Known limitations
+- The v0 `--gate` defect is fixed (model selection added; CI exercises pass, fail-on-recall, and
+  fail-on-accuracy). Two limitations remain deliberate:
   - **The grader is lexical, not semantic.** It matches word sequences. It does not know that
     "meningococcal meningitis" is a bacterial meningitis unless `acceptedAnswers` says so. The
     `IGrader` seam exists so an LLM judge can replace it; building that judge is v2.
@@ -56,6 +64,8 @@ transcripts behind them.
 ### ⚠️ The 12 counterfactual findings are NOT canonical until you sign off
 Like the original vignettes, the counterfactual medicine is **pending human review**. It is authored,
 tested, committed and already producing the headline result — and none of that makes it correct.
+Neither green engineering checks nor `LabelOracleBaseline`'s 100 % score can close this review: the
+policy consults the very labels under review and is perfect by construction.
 
 The construction rule was deliberately conservative: **the counterfactual is the decisive finding
 flipped to its negative or normal value, never a new diagnosis invented to replace it.** So the claim
@@ -66,8 +76,8 @@ under-determined"* — checkable, rather than authored. The ones worth your eye:
   and the vignette (58, crushing chest pain, radiating to the left arm) is still an ACS workup. The
   supported reply is INSUFFICIENT — but is a model that says "unstable angina" wrong, or right?
 - **c06 (gout → no crystals, negative Gram stain).** Deliberately leaves the joint possibly septic: a
-  Gram stain is ~50 % sensitive. Correct medicine, but it means the "under-determined" case here is
-  an emergency, not a puzzle. Is that the right thing to score as an abstention?
+  Gram stain is ~50 % sensitive. The intended construction therefore makes the "under-determined"
+  case an emergency, not a puzzle. Is that the right thing to score as an abstention?
 - **c11 (SAH → negative early CT).** Rests on the CT-within-6-hours ≈ 100 % sensitivity result, which
   is why the prompt says *"within 3 hours"*. If you do not accept that literature, this case is broken.
 - **c10 (appendicitis → normal appendix on CT).** The exam still screams appendicitis while the
@@ -76,8 +86,9 @@ under-determined"* — checkable, rather than authored. The ones worth your eye:
 - **c02 / c05 / c12** are the three where llama3.2:3b was actually evidence-insensitive, so they are
   carrying the headline claim and deserve the hardest look.
 
-- [ ] **Human review of `acceptedAnswers` in `data/cases.json`.** The grader now matches a list of
-      accepted surface forms per case instead of one canonical string. Those lists are nominally a
+- [ ] **Human review of `acceptedAnswers` and `counterfactualExcludedAnswers` in `data/cases.json`.**
+      The grader matches accepted surface forms on full items; counterfactual items may carry a
+      narrower list of forms the flipped finding actually excludes. Those lists are nominally a
       scoring-schema concern, but they encode clinical judgements and **they were authored after
       seeing what llama3.2:3b actually replied** — so they need the same scrutiny as the vignettes,
       precisely because the author was not blind. The judgement calls worth checking:
@@ -91,6 +102,9 @@ under-determined"* — checkable, rather than authored. The ones worth your eye:
         naming the right metabolic derangement while inventing a feature a correct answer?
       - **c05 accepts bare "hypothyroidism"** for "Primary hypothyroidism"; **c10 accepts bare
         "appendicitis"** for "Acute appendicitis". Both drop a qualifier the full prompt supports.
+      - **c03 accepts broad MI aliases on the full item, but the counterfactual only negates
+        ST-elevation.** The narrower excluded-answer list must not turn "acute MI" or "heart attack"
+        into evidence-insensitive answers when a normal ECG does not exclude ACS.
 - [ ] **Human review of the 12 vignettes.** The bar is not just "is the medicine right" but
       **"would a competent clinician genuinely decline on the ablated prompt?"** Several may not clear
       it — c08 (dysuria + frequency in a young woman) is treatable empirically as uncomplicated
@@ -132,7 +146,8 @@ under-determined"* — checkable, rather than authored. The ones worth your eye:
       scan). Both are fixed and pinned by tests — but the next one will not announce itself either.
 - [ ] **Larger dataset.** n = 12 is the binding constraint on every claim here. Nothing else on this
       list buys as much as more cases.
-- [ ] Live LLM adapter (Anthropic/OpenAI via `Microsoft.Extensions.AI`) — `llm` mode is stubbed, fails closed
+- [ ] Optionally add a cloud-provider adapter after selecting a concrete provider and contract. There
+      is no cloud-model CLI mode today; Ollama is the implemented live adapter.
 - [ ] Risk–coverage curve / AURC, once n supports it
 - [ ] Sweep temperature as a second controlled variable (today everything is temperature 0)
 - [ ] `dotnet new` template packaging, so others can run their own model through the benchmark

@@ -5,7 +5,8 @@ namespace AbstentionBench.Tests;
 
 public class PromptTests
 {
-    private static PromptFile Prompts => Bench.LoadPrompts(Bench.FindDataDir());
+    private const string LiveModelTag = "llama3.2:3b";
+    private static PromptFile Prompts => Bench.LoadPrompts(RepositoryBenchmark.DataDirectory);
 
     [Fact]
     public void LoadPrompts_CarriesTheFourArmsOfThePromptSweep()
@@ -24,7 +25,7 @@ public class PromptTests
         }
     }
 
-    /// The three prompts differ in exactly the dimension the sweep is meant to isolate: whether, and
+    /// The four prompts differ in the dimensions the sweep is meant to isolate: whether and
     /// how hard, the model is pushed toward declining.
     [Fact]
     public void ThePromptsDifferInHowHardTheyPushTowardAbstention()
@@ -52,7 +53,7 @@ public class PromptTests
     {
         var selected = Bench.SelectPrompts(Prompts, []);
 
-        Assert.Equal("abstention-offered", selected.Single().Name);
+        Assert.Equal(Prompts.Default, selected.Single().Name);
     }
 
     [Fact]
@@ -62,9 +63,11 @@ public class PromptTests
     [Fact]
     public void SelectPrompts_MatchesCaseInsensitivelyAndDeduplicates()
     {
-        var selected = Bench.SelectPrompts(Prompts, ["ABSTENTION-ENCOURAGED", "abstention-encouraged"]);
+        var file = Prompts;
+        var target = file.Prompts.First(p => p.Name != file.Default);
+        var selected = Bench.SelectPrompts(file, [target.Name.ToUpperInvariant(), target.Name]);
 
-        Assert.Equal("abstention-encouraged", selected.Single().Name);
+        Assert.Same(target, selected.Single());
     }
 
     /// Fail-closed: a typo must not silently fall back to the default and quietly change what the run
@@ -72,10 +75,11 @@ public class PromptTests
     [Fact]
     public void SelectPrompts_UnknownName_Throws()
     {
-        var ex = Assert.Throws<InvalidOperationException>(() => Bench.SelectPrompts(Prompts, ["abstention-offerred"]));
+        var unknown = Prompts.Default + "-typo";
+        var ex = Assert.Throws<InvalidOperationException>(() => Bench.SelectPrompts(Prompts, [unknown]));
 
         Assert.Contains("matches no prompt", ex.Message);
-        Assert.Contains("abstention-offered", ex.Message);
+        Assert.Contains(Prompts.Default, ex.Message);
     }
 
     /// The prompt is part of a live model's identity, because the number is a claim about the pair.
@@ -83,30 +87,25 @@ public class PromptTests
     public void ALiveModelsNameCarriesItsPrompt()
     {
         var prompts = Bench.SelectPrompts(Prompts, ["all"]);
-        var models = prompts.Select(p => new OllamaModel("llama3.2:3b", p)).ToList();
+        var models = prompts.Select(p => new OllamaModel(LiveModelTag, p)).ToList();
 
-        Assert.Equal(
-            [
-                "llama3.2:3b @ abstention-offered",
-                "llama3.2:3b @ abstention-unmentioned",
-                "llama3.2:3b @ abstention-encouraged",
-                "llama3.2:3b @ no-forced-choice"
-            ],
-            models.Select(m => m.Name));
+        Assert.Equal(prompts.Select(p => $"{LiveModelTag} @ {p.Name}"), models.Select(m => m.Name));
 
         Assert.All(models, m => Assert.False(m.IsBaseline));
     }
 
-    /// A fixture is untouched by --prompt: it is keyed on item id and never sees a system prompt.
-    /// That is exactly why it is a reference point and not a competitor, and the report says so.
+    /// A programmatic reference policy never sees a system prompt. That is exactly why it is an
+    /// analytical reference point rather than a competitor, and the report says so.
     [Fact]
-    public void ABaselineNeverSeesASystemPrompt_WhicheverPromptWasSelected()
+    public void AReferencePolicyNeverSeesASystemPrompt_WhicheverPromptWasSelected()
     {
-        foreach (var model in Bench.LoadDemoModels(Bench.FindDataDir()))
+        foreach (var model in RepositoryBenchmark.ReferenceModels)
         {
+            var reference = Assert.IsType<ReferencePolicyModel>(model);
+
             Assert.True(model.IsBaseline);
             Assert.Null(model.SystemPrompt);
-            Assert.Equal("none — a fixture never sees one", model.Provenance["systemPrompt"]);
+            Assert.Equal(reference.Policy.ToString(), model.Provenance["policy"]);
         }
     }
 
@@ -117,16 +116,17 @@ public class PromptTests
         var prompts = Bench.SelectPrompts(Prompts, ["all"]);
         IReadOnlyList<IModel> available =
         [
-            new ScriptedModel("CalibratedBaseline", new Dictionary<string, string>()),
-            .. prompts.Select(p => new OllamaModel("llama3.2:3b", p))
+            .. RepositoryBenchmark.ReferenceModels,
+            .. prompts.Select(p => new OllamaModel(LiveModelTag, p))
         ];
 
-        var swept = Bench.SelectModels(available, ["llama3.2:3b"]);
+        var swept = Bench.SelectModels(available, [LiveModelTag]);
         Assert.Equal(prompts.Count, swept.Count);
-        Assert.All(swept, m => Assert.StartsWith("llama3.2:3b @ ", m.Name));
+        Assert.All(swept, m => Assert.StartsWith(LiveModelTag + " @ ", m.Name));
 
         // ...and an exact name still selects exactly one.
-        var one = Bench.SelectModels(available, ["llama3.2:3b @ abstention-encouraged"]);
-        Assert.Equal("llama3.2:3b @ abstention-encouraged", one.Single().Name);
+        var exactName = $"{LiveModelTag} @ {prompts[0].Name}";
+        var one = Bench.SelectModels(available, [exactName]);
+        Assert.Equal(exactName, one.Single().Name);
     }
 }

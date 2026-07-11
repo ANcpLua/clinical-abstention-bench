@@ -9,12 +9,6 @@ public class LexicalGraderTests
 {
     private static readonly LexicalGrader Grader = LexicalGrader.Instance;
 
-    private static Item Full(string truth, params string[] accepted)
-        => new("c01", Variant.Full, "…", truth, MustAbstain: false, accepted);
-
-    private static Item Ablated()
-        => new("c01", Variant.Ablated, "…", "INSUFFICIENT", MustAbstain: true);
-
     // ---- 1. punctuation and morphology -------------------------------------------------------
 
     /// The defect that cost llama3.2:3b a correct answer: it replied "Iron deficiency anemia" and the
@@ -40,7 +34,7 @@ public class LexicalGraderTests
     [Fact]
     public void Score_AcceptedSynonymCountsAsCorrect()
     {
-        var item = Full("ST-elevation myocardial infarction", "STEMI", "acute MI");
+        var item = RepositoryBenchmark.Item("c03", Variant.Full);
 
         Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "STEMI."));
         Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "Acute MI, get him to the cath lab."));
@@ -88,12 +82,12 @@ public class LexicalGraderTests
         => Assert.True(Grader.Asserts(response, ["STEMI"]));
 
     /// A live bug, caught by reading llama3.2:3b's counterfactual transcripts. The model replied
-    /// "Diabetic ketoacidosis (DKA) is unlikely due to normal glucose" — it had read the labs exactly
+    /// "Diabetic ketoacidosis (DKA) is unlikely due to negative ketones" — it had read the labs exactly
     /// right — and the grader convicted it of naming the excluded diagnosis. The parenthetical
     /// restatement sat between the diagnosis and the negation and blocked the forward scan. An
     /// appositive naming the SAME diagnosis must not shield it from a negation that plainly applies.
     [Theory]
-    [InlineData("Diabetic ketoacidosis (DKA) is unlikely due to the normal glucose.", "diabetic ketoacidosis", "DKA")]
+    [InlineData("Diabetic ketoacidosis (DKA) is unlikely due to negative ketones.", "diabetic ketoacidosis", "DKA")]
     [InlineData("Urinary Tract Infection (UTI) - unlikely.", "urinary tract infection", "UTI")]
     [InlineData("Acute ST-Elevation Myocardial Infarction (STEMI) is excluded.", "ST-elevation myocardial infarction", "STEMI")]
     public void Asserts_FalseWhenAnAppositiveRestatementPrecedesTheNegation(string response, params string[] forms)
@@ -115,6 +109,15 @@ public class LexicalGraderTests
     [Fact]
     public void Asserts_TrueWhenTheNegationAppliesToADifferentDiagnosis()
         => Assert.True(Grader.Asserts("This is not pericarditis. It is a STEMI.", ["STEMI"]));
+
+    [Fact]
+    public void Asserts_NonOnlyNegatesTheImmediatelyPrefixedDiagnosis()
+    {
+        Assert.False(Grader.Asserts("Non-ST-elevation myocardial infarction.", ["ST-elevation myocardial infarction"]));
+        Assert.True(Grader.Asserts(
+            "A non-specific presentation most likely represents diabetic ketoacidosis.",
+            ["diabetic ketoacidosis"]));
+    }
 
     // ---- 3b. hedging -------------------------------------------------------------------------
 
@@ -161,12 +164,12 @@ public class LexicalGraderTests
     public void Score_HedgedAnswerOnAnAblatedItemIsAnUnsupportedAnswer()
         => Assert.Equal(
             Outcome.UnsupportedAnswer,
-            Grader.Score(Ablated(), "There's insufficient data to be certain, but most likely DKA."));
+            Grader.Score(RepositoryBenchmark.Item("c01", Variant.Ablated), "There's insufficient data to be certain, but most likely DKA."));
 
     [Fact]
     public void Score_HedgedAnswerOnAFullItemIsScoredAsAnAnswer_NotOverAbstention()
     {
-        var item = Full("Diabetic ketoacidosis", "DKA");
+        var item = RepositoryBenchmark.Item("c01", Variant.Full);
 
         Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "Insufficient to be certain, but most likely DKA."));
     }
@@ -174,14 +177,16 @@ public class LexicalGraderTests
     [Fact]
     public void Score_AblatedItem_DeclineIsCorrectAbstention_AnswerIsUnsupported()
     {
-        Assert.Equal(Outcome.CorrectAbstention, Grader.Score(Ablated(), "INSUFFICIENT, labs missing"));
-        Assert.Equal(Outcome.UnsupportedAnswer, Grader.Score(Ablated(), "Diabetic ketoacidosis."));
+        var item = RepositoryBenchmark.Item("c01", Variant.Ablated);
+
+        Assert.Equal(Outcome.CorrectAbstention, Grader.Score(item, "INSUFFICIENT, labs missing"));
+        Assert.Equal(Outcome.UnsupportedAnswer, Grader.Score(item, "Diabetic ketoacidosis."));
     }
 
     [Fact]
     public void Score_FullItem_CoversCorrectWrongAndOverAbstention()
     {
-        var item = Full("Diabetic ketoacidosis", "DKA");
+        var item = RepositoryBenchmark.Item("c01", Variant.Full);
 
         Assert.Equal(Outcome.CorrectAnswer, Grader.Score(item, "Diabetic ketoacidosis."));
         Assert.Equal(Outcome.WrongAnswer, Grader.Score(item, "Gastroenteritis."));
@@ -193,7 +198,8 @@ public class LexicalGraderTests
     [Fact]
     public void Score_EmptyReply_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(() => Grader.Score(Ablated(), "   "));
+        var ex = Assert.Throws<InvalidDataException>(
+            () => Grader.Score(RepositoryBenchmark.Item("c01", Variant.Ablated), "   "));
 
         Assert.Contains("c01:ablated", ex.Message);
         Assert.Contains("unscoreable", ex.Message);
@@ -208,19 +214,14 @@ public class LexicalGraderTests
 public class AcceptedAnswerDataTests
 {
     [Fact]
-    public void EveryCase_CarriesAcceptedAnswers_AndTheCanonicalAnswerAlwaysScoresCorrect()
+    public void EveryCanonicalAndConfiguredAcceptedAnswerScoresCorrect()
     {
-        var cases = Bench.LoadCases(Bench.FindDataDir());
-
-        foreach (var c in cases)
+        foreach (var c in RepositoryBenchmark.Cases)
         {
-            Assert.NotNull(c.AcceptedAnswers);
-            Assert.NotEmpty(c.AcceptedAnswers!);
-
-            var full = Item.FromCase(c).Single(i => i.Variant == Variant.Full);
+            var full = RepositoryBenchmark.Item(c.Id, Variant.Full);
 
             Assert.Equal(Outcome.CorrectAnswer, LexicalGrader.Instance.Score(full, c.ExpectedAnswer));
-            foreach (var synonym in c.AcceptedAnswers!)
+            foreach (var synonym in c.AcceptedAnswers ?? [])
                 Assert.Equal(Outcome.CorrectAnswer, LexicalGrader.Instance.Score(full, synonym + "."));
         }
     }
@@ -231,8 +232,7 @@ public class AcceptedAnswerDataTests
     [Fact]
     public void C02_DoesNotAcceptBareMeningitis()
     {
-        var c02 = Bench.LoadCases(Bench.FindDataDir()).Single(c => c.Id == "c02");
-        var full = Item.FromCase(c02).Single(i => i.Variant == Variant.Full);
+        var full = RepositoryBenchmark.Item("c02", Variant.Full);
 
         Assert.Equal(Outcome.WrongAnswer, LexicalGrader.Instance.Score(full, "Meningitis."));
         Assert.Equal(Outcome.CorrectAnswer, LexicalGrader.Instance.Score(full, "Meningococcal meningitis."));

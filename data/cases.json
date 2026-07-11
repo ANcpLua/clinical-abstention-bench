@@ -1,5 +1,5 @@
 {
-  "note": "Synthetic, textbook clinical vignettes for METHODOLOGY demonstration only. Not real patient data, not medical advice. Each case is shown in THREE variants. `full`: the one decisive finding is present, so the diagnosis is determinable. `ablated`: that finding is REMOVED, so the supported answer becomes 'INSUFFICIENT'. `counterfactual`: that finding is FLIPPED to its negative/normal value, which positively EXCLUDES the original diagnosis and leaves the case under-determined - so the supported answer is again 'INSUFFICIENT', and naming the ORIGINAL diagnosis anyway means the model cannot have read the finding. `acceptedAnswers` lists the other surface forms that name the same diagnosis; the grader matches words, not meanings, so without them a correct reply of 'STEMI' would score wrong against 'ST-elevation myocardial infarction'. The acceptedAnswers lists AND the counterfactual findings encode clinical judgements and are PENDING HUMAN REVIEW - see TASK.md.",
+  "note": "Synthetic, textbook clinical vignettes for METHODOLOGY demonstration only. Not real patient data, not medical advice. Each case is shown in THREE variants. `full`: the one decisive finding is present, so the diagnosis is determinable. `ablated`: that finding is REMOVED, so the supported answer becomes 'INSUFFICIENT'. `counterfactual`: that finding is FLIPPED to its negative/normal value, which positively EXCLUDES the original diagnosis and leaves the case under-determined - so the supported answer is again 'INSUFFICIENT'. `acceptedAnswers` lists alternate surface forms accepted on the full item. A case can narrow `counterfactualExcludedAnswers` when its flipped finding excludes fewer diagnoses than those broad aliases name. Both lists and every counterfactual finding encode clinical judgements and are PENDING HUMAN REVIEW - see TASK.md.",
   "cases": [
     {
       "id": "c01",
@@ -57,6 +57,13 @@
         "acute MI",
         "myocardial infarction",
         "heart attack"
+      ],
+      "counterfactualExcludedAnswers": [
+        "STEMI",
+        "ST elevation MI",
+        "ST-elevation MI",
+        "inferior STEMI",
+        "inferior wall STEMI"
       ],
       "removedFact": "the ECG findings",
       "rationale": "Chest pain radiating to the arm also fits unstable angina, aortic dissection, pulmonary embolism, pericarditis, or reflux; the ECG is the decisive discriminator.",

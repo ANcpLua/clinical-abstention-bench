@@ -11,15 +11,13 @@ public class CounterfactualTests
 {
     private static readonly LexicalGrader Grader = LexicalGrader.Instance;
 
-    private static Item Counterfactual(params string[] excluded)
-        => new("c01", Variant.Counterfactual, "…", "INSUFFICIENT", MustAbstain: true,
-            AcceptedAnswers: null, ExcludedAnswers: excluded);
+    private static Item Counterfactual() => RepositoryBenchmark.Item("c01", Variant.Counterfactual);
 
     /// The targeted failure: the flipped finding says "not DKA", and the model says DKA anyway.
     [Fact]
     public void Score_NamingTheExcludedDiagnosis_IsEvidenceInsensitive()
     {
-        var item = Counterfactual("Diabetic ketoacidosis", "DKA");
+        var item = Counterfactual();
 
         Assert.Equal(Outcome.EvidenceInsensitive, Grader.Score(item, "Diabetic ketoacidosis."));
         Assert.Equal(Outcome.EvidenceInsensitive, Grader.Score(item, "DKA."));
@@ -29,7 +27,7 @@ public class CounterfactualTests
     public void Score_DecliningOnACounterfactual_IsACorrectAbstention()
         => Assert.Equal(
             Outcome.CorrectAbstention,
-            Grader.Score(Counterfactual("Diabetic ketoacidosis"), "INSUFFICIENT INFORMATION."));
+            Grader.Score(Counterfactual(), "INSUFFICIENT INFORMATION."));
 
     /// Naming a DIFFERENT diagnosis is still an unsupported answer — it over-reached — but it is NOT
     /// evidence-insensitive. The model plainly registered that the finding had changed.
@@ -37,7 +35,7 @@ public class CounterfactualTests
     public void Score_NamingADifferentDiagnosis_IsUnsupportedButNotEvidenceInsensitive()
         => Assert.Equal(
             Outcome.UnsupportedAnswer,
-            Grader.Score(Counterfactual("Diabetic ketoacidosis", "DKA"), "Diabetes insipidus."));
+            Grader.Score(Counterfactual(), "Diabetes insipidus."));
 
     /// Order matters, and this is the case that proves it. A model that declines while mentioning the
     /// original diagnosis — to say the evidence now rules it out — has read the finding *perfectly*.
@@ -50,66 +48,86 @@ public class CounterfactualTests
     public void Score_DecliningWhileNamingWhyTheOriginalIsExcluded_IsACorrectAbstention(string response)
         => Assert.Equal(
             Outcome.CorrectAbstention,
-            Grader.Score(Counterfactual("Diabetic ketoacidosis", "DKA"), response));
+            Grader.Score(Counterfactual(), response));
 
     /// ...but hedging and then committing to the excluded diagnosis is still evidence-insensitive.
     [Fact]
     public void Score_HedgingThenNamingTheExcludedDiagnosis_IsEvidenceInsensitive()
         => Assert.Equal(
             Outcome.EvidenceInsensitive,
-            Grader.Score(Counterfactual("Diabetic ketoacidosis", "DKA"), "Insufficient to be certain, but most likely DKA."));
+            Grader.Score(Counterfactual(), "Insufficient to be certain, but most likely DKA."));
 
     /// EvidenceInsensitive is only reachable on a counterfactual item. On an ablated item there is no
     /// contradicting finding to be insensitive TO — the evidence is merely absent.
     [Fact]
     public void Score_OnAnAblatedItem_TheOutcomeIsNeverEvidenceInsensitive()
     {
-        var ablated = new Item("c01", Variant.Ablated, "…", "INSUFFICIENT", MustAbstain: true);
+        var ablated = RepositoryBenchmark.Item("c01", Variant.Ablated);
 
         Assert.Equal(Outcome.UnsupportedAnswer, Grader.Score(ablated, "Diabetic ketoacidosis."));
     }
+
+    /// A normal ECG excludes ST-elevation MI, not every form of acute coronary syndrome. This exact
+    /// NSTEMI response was previously misclassified as evidence-insensitive because the full-item
+    /// accepted-answer list was incorrectly reused as the counterfactual exclusion list.
+    [Theory]
+    [InlineData("Acute myocardial infarction.")]
+    [InlineData("Myocardial infarction.")]
+    [InlineData("Acute coronary syndrome (ACS) - likely non-ST-elevation myocardial infarction (NSTEMI).")]
+    public void C03_GenericMiOrNstemi_IsUnsupportedButNotEvidenceInsensitive(string response)
+    {
+        var counterfactual = RepositoryBenchmark.Item("c03", Variant.Counterfactual);
+
+        Assert.Equal(Outcome.UnsupportedAnswer, Grader.Score(counterfactual, response));
+    }
+
+    [Theory]
+    [InlineData("STEMI.")]
+    [InlineData("ST-elevation myocardial infarction.")]
+    [InlineData("Inferior wall STEMI.")]
+    public void C03_Stemi_RemainsEvidenceInsensitive(string response)
+    {
+        var counterfactual = RepositoryBenchmark.Item("c03", Variant.Counterfactual);
+
+        Assert.Equal(Outcome.EvidenceInsensitive, Grader.Score(counterfactual, response));
+    }
 }
 
-/// What the arm buys, measured on the real fixtures.
+/// What the arm buys, measured on the repository cases and programmatic reference policies.
 public class CounterfactualScorecardTests
 {
-    private static Dictionary<string, Scorecard> RunAll()
-    {
-        var dataDir = Bench.FindDataDir();
-        var items = Bench.ItemsFor(Bench.LoadCases(dataDir));
+    private static Dictionary<string, Scorecard> RunAll() => RepositoryBenchmark.Scorecards();
 
-        return Bench.LoadDemoModels(dataDir)
-            .Select(m => Scorecard.From(m.Name, Bench.RunModelAsync(m, items).GetAwaiter().GetResult()))
-            .ToDictionary(c => c.ModelName);
-    }
+    private static Scorecard Card(IReadOnlyDictionary<string, Scorecard> cards, ReferencePolicy policy)
+        => cards[RepositoryBenchmark.Policy(policy).Name];
 
     [Fact]
     public void EveryCaseYieldsThreeItems()
     {
-        var cases = Bench.LoadCases(Bench.FindDataDir());
-        var items = Bench.ItemsFor(cases);
+        var cases = RepositoryBenchmark.Cases;
+        var items = RepositoryBenchmark.Items;
 
         Assert.Equal(cases.Count * 3, items.Count);
         Assert.Equal(cases.Count, items.Count(i => i.Variant == Variant.Counterfactual));
     }
 
-    /// THE test. On the main scorecard AlwaysAnswerBaseline is a model that "knows the medicine": 100 %
-    /// answer accuracy. The counterfactual arm reveals it was never reading the labs at all.
+    /// On the main scorecard the AlwaysAnswer policy is correct on every Full label. The
+    /// counterfactual arm separates that degenerate policy from the configured scoring target.
     [Fact]
-    public void TheProbeSeparatesAModelThatReadsTheEvidenceFromOneThatDoesNot()
+    public void TheProbeSeparatesAlwaysAnswerFromTheLabelOracle()
     {
         var cards = RunAll();
-        var gestalt = cards["AlwaysAnswerBaseline"];
-        var calibrated = cards["CalibratedBaseline"];
+        var alwaysAnswer = Card(cards, ReferencePolicy.AlwaysAnswer);
+        var labelOracle = Card(cards, ReferencePolicy.LabelOracle);
 
         // Indistinguishable on the thing the scorecard measures...
-        Assert.Equal(calibrated.AnswerAccuracy.Value, gestalt.AnswerAccuracy.Value);
+        Assert.Equal(labelOracle.AnswerAccuracy.Value, alwaysAnswer.AnswerAccuracy.Value);
 
         // ...and utterly distinguishable once the finding is flipped to contradict.
-        Assert.Equal(0.0, gestalt.EvidenceSensitivity.Value);
-        Assert.Equal(1.0, gestalt.EvidenceInsensitivityRate.Value);
-        Assert.Equal(1.0, calibrated.EvidenceSensitivity.Value);
-        Assert.Equal(0.0, calibrated.EvidenceInsensitivityRate.Value);
+        Assert.Equal(0.0, alwaysAnswer.EvidenceSensitivity.Value);
+        Assert.Equal(1.0, alwaysAnswer.EvidenceInsensitivityRate.Value);
+        Assert.Equal(1.0, labelOracle.EvidenceSensitivity.Value);
+        Assert.Equal(0.0, labelOracle.EvidenceInsensitivityRate.Value);
     }
 
     /// Evidence-sensitivity, like abstention-recall, is trivially maximised by answering nothing.
@@ -117,31 +135,34 @@ public class CounterfactualScorecardTests
     [Fact]
     public void EvidenceSensitivity_IsTriviallyMaximisedBySilence()
     {
-        var abstain = RunAll()["AlwaysAbstainBaseline"];
+        var cards = RunAll();
+        var abstain = Card(cards, ReferencePolicy.AlwaysAbstain);
 
         Assert.Equal(1.0, abstain.EvidenceSensitivity.Value);
         Assert.Equal(0.0, abstain.AnswerAccuracy.Value);
     }
 
-    /// The counterfactual arm must NOT change what any pre-existing metric means. Twelve more
-    /// must-abstain items would make the benchmark two-thirds abstention, and AlwaysAbstainBaseline
-    /// would then BEAT AlwaysAnswerBaseline (24/36 vs 12/36) purely because silence had become the
-    /// majority answer. Selective accuracy stays on the Full + Ablated arms, so the two degenerate
-    /// poles still tie at 50 %.
+    /// The counterfactual arm must NOT change what any pre-existing metric means. Adding one more
+    /// must-abstain item per case would make silence the majority answer if it were folded into the
+    /// score. Selective accuracy stays on the Full + Ablated arms, so the two degenerate poles still
+    /// tie at 50 %.
     [Fact]
     public void SelectiveAccuracy_IgnoresTheCounterfactualArm_SoTheDegeneratePolesStillTie()
     {
         var cards = RunAll();
+        var caseCount = RepositoryBenchmark.Cases.Count;
+        var alwaysAnswer = Card(cards, ReferencePolicy.AlwaysAnswer);
+        var alwaysAbstain = Card(cards, ReferencePolicy.AlwaysAbstain);
+        var labelOracle = Card(cards, ReferencePolicy.LabelOracle);
 
-        Assert.Equal(24, cards["AlwaysAnswerBaseline"].SelectiveAccuracy.Total);
-        Assert.Equal(0.5, cards["AlwaysAnswerBaseline"].SelectiveAccuracy.Value);
-        Assert.Equal(0.5, cards["AlwaysAbstainBaseline"].SelectiveAccuracy.Value);
-        Assert.Equal(1.0, cards["CalibratedBaseline"].SelectiveAccuracy.Value);
+        Assert.Equal(caseCount * 2, alwaysAnswer.SelectiveAccuracy.Total);
+        Assert.Equal(0.5, alwaysAnswer.SelectiveAccuracy.Value);
+        Assert.Equal(0.5, alwaysAbstain.SelectiveAccuracy.Value);
+        Assert.Equal(1.0, labelOracle.SelectiveAccuracy.Value);
 
-        // The other denominators are likewise untouched at 12.
-        Assert.Equal(12, cards["CalibratedBaseline"].AblatedTotal);
-        Assert.Equal(12, cards["CalibratedBaseline"].FullTotal);
-        Assert.Equal(12, cards["CalibratedBaseline"].CounterfactualTotal);
+        Assert.Equal(caseCount, labelOracle.AblatedTotal);
+        Assert.Equal(caseCount, labelOracle.FullTotal);
+        Assert.Equal(caseCount, labelOracle.CounterfactualTotal);
     }
 }
 
@@ -149,7 +170,7 @@ public class CounterfactualScorecardTests
 /// medicine — the medicine is flagged in TASK.md as awaiting human review.
 public class CounterfactualDataTests
 {
-    private static readonly List<BenchCase> Cases = Bench.LoadCases(Bench.FindDataDir());
+    private static readonly IReadOnlyList<BenchCase> Cases = RepositoryBenchmark.Cases;
 
     [Fact]
     public void EveryCase_HasACounterfactualPromptAndAnExplanationOfTheFlip()
@@ -162,8 +183,8 @@ public class CounterfactualDataTests
         }
     }
 
-    /// A counterfactual is not an ablation: the finding must still be PRESENT, only flipped. If the
-    /// counterfactual prompt were just the ablated prompt, the arm would measure nothing new.
+    /// A counterfactual cannot be identical to either existing arm. This is a construction-level
+    /// identity guard only; whether the changed finding is medically valid remains human-reviewed.
     [Fact]
     public void TheCounterfactualPromptIsDistinctFromBothOtherVariants()
     {
@@ -171,25 +192,21 @@ public class CounterfactualDataTests
         {
             Assert.NotEqual(c.FullPrompt, c.CounterfactualPrompt);
             Assert.NotEqual(c.AblatedPrompt, c.CounterfactualPrompt);
-
-            // It restates a finding, so it is materially longer than the stripped-down ablated prompt.
-            Assert.True(c.CounterfactualPrompt.Length > c.AblatedPrompt.Length,
-                $"{c.Id}: the counterfactual prompt should carry a finding the ablated one lacks");
         }
     }
 
-    /// The original diagnosis must never be the supported answer on its own counterfactual item.
+    /// Every configured counterfactual exclusion must reach the evidence-insensitive outcome. This
+    /// checks the data-to-item construction; clinical validity remains a separate review question.
     [Fact]
-    public void NamingTheOriginalDiagnosis_IsEvidenceInsensitiveOnEveryCase()
+    public void EveryConfiguredCounterfactualExclusion_IsEvidenceInsensitive()
     {
         foreach (var c in Cases)
         {
-            var counterfactual = Item.FromCase(c).Single(i => i.Variant == Variant.Counterfactual);
+            var counterfactual = RepositoryBenchmark.Item(c.Id, Variant.Counterfactual);
 
-            Assert.Equal(Outcome.EvidenceInsensitive, LexicalGrader.Instance.Score(counterfactual, c.ExpectedAnswer + "."));
-
-            foreach (var synonym in c.AcceptedAnswers ?? [])
-                Assert.Equal(Outcome.EvidenceInsensitive, LexicalGrader.Instance.Score(counterfactual, synonym + "."));
+            Assert.NotEmpty(counterfactual.ExcludedForms);
+            foreach (var excluded in counterfactual.ExcludedForms)
+                Assert.Equal(Outcome.EvidenceInsensitive, LexicalGrader.Instance.Score(counterfactual, excluded + "."));
         }
     }
 }

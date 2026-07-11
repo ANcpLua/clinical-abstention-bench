@@ -1,6 +1,6 @@
 namespace ClinicalAbstentionBench;
 
-/// A single benchmark case: one clinical vignette in two variants.
+/// A single benchmark case: one clinical vignette in three variants.
 ///
 /// `AcceptedAnswers` are the other surface forms that name the same diagnosis — abbreviations,
 /// spelling variants, and the more- or less-specific names a clinician would also accept. They exist
@@ -18,7 +18,11 @@ public sealed record BenchCase(
     string Rationale,
     IReadOnlyList<string>? AcceptedAnswers = null,
     string? FlippedFact = null,
-    string? CounterfactualRationale = null);
+    string? CounterfactualRationale = null,
+    /// Other surface forms, besides ExpectedAnswer, that the flipped finding actually excludes.
+    /// Null means every AcceptedAnswer is equivalent here. A narrower explicit list is needed when a
+    /// full-item alias is broader than the finding being flipped (for example, MI versus STEMI).
+    IReadOnlyList<string>? CounterfactualExcludedAnswers = null);
 
 /// The on-disk shape of data/cases.json.
 public sealed record CaseFile(string Note, List<BenchCase> Cases);
@@ -69,12 +73,16 @@ public sealed record Item(
     /// because the evidence is absent, one because the evidence actively contradicts.
     public static IEnumerable<Item> FromCase(BenchCase c)
     {
-        IReadOnlyList<string> originalDiagnosis = [c.ExpectedAnswer, .. c.AcceptedAnswers ?? []];
+        IReadOnlyList<string> excludedDiagnosis =
+        [
+            c.ExpectedAnswer,
+            .. c.CounterfactualExcludedAnswers ?? c.AcceptedAnswers ?? []
+        ];
 
         yield return new Item(c.Id, Variant.Full, c.FullPrompt, c.ExpectedAnswer, MustAbstain: false, c.AcceptedAnswers);
         yield return new Item(c.Id, Variant.Ablated, c.AblatedPrompt, "INSUFFICIENT", MustAbstain: true);
         yield return new Item(c.Id, Variant.Counterfactual, c.CounterfactualPrompt, "INSUFFICIENT", MustAbstain: true,
-            AcceptedAnswers: null, ExcludedAnswers: originalDiagnosis);
+            AcceptedAnswers: null, ExcludedAnswers: excludedDiagnosis);
     }
 }
 
@@ -89,21 +97,25 @@ public sealed record SystemPrompt(string Name, string Text, string Description);
 /// The on-disk shape of data/prompts.json.
 public sealed record PromptFile(string Default, List<SystemPrompt> Prompts);
 
-/// A model under test. A real LLM only needs `item.Prompt`; the interface passes the
-/// whole item so deterministic fixtures can key off `item.Key`.
+/// The only item data a model receives. Ground-truth labels and scoring metadata are deliberately
+/// absent: an adapter cannot accidentally leak the answer into the inference request.
+public sealed record ModelInput(string ItemKey, string Prompt);
+
+/// A model under test. Live adapters receive only ModelInput, while deterministic reference policies
+/// keep any label access inside their own explicitly reported construction.
 public interface IModel
 {
     string Name { get; }
 
     /// Task<string> AnswerAsync is the only thing a model must do.
-    Task<string> AnswerAsync(Item item, CancellationToken ct = default);
+    Task<string> AnswerAsync(ModelInput input, CancellationToken ct = default);
 
-    /// The system prompt in force, or null for a fixture that never sees one.
+    /// The system prompt in force, or null for a reference policy that never sees one.
     /// Recorded per item in the report so a transcript is self-contained.
     string? SystemPrompt => null;
 
-    /// True for a deterministic fixture. Reported separately from live models, because a fixture is
-    /// keyed on item id and never sees a system prompt — it is a reference point, not a competitor.
+    /// True for a deterministic reference policy. Reported separately from live models because a
+    /// programmatic policy is an analytical reference point, not a competitor.
     bool IsBaseline => false;
 
     /// What was actually run, recorded verbatim in the report's provenance — endpoint, model
@@ -111,26 +123,81 @@ public interface IModel
     IReadOnlyDictionary<string, string> Provenance => new Dictionary<string, string>();
 }
 
-/// Deterministic, credential-free baseline whose reply for each item is read from a fixture.
-/// Used for the offline demo and CI so the harness runs with zero API keys. Note that a
-/// ScriptedModel is keyed on item id and never sees a system prompt — it is therefore untouched by
-/// `--prompt`, and NOT running under the same conditions as a live model. That is precisely why the
-/// baselines are reference points and not competitors.
-public sealed class ScriptedModel(string name, IReadOnlyDictionary<string, string> repliesByItemKey) : IModel
+/// The three analytical policies shown beside live results. None is learned and none reads a system
+/// prompt; their behavior and any label access are declared in report provenance.
+public enum ReferencePolicy
 {
-    public string Name { get; } = name;
+    AlwaysAnswer,
+    AlwaysAbstain,
+    LabelOracle
+}
+
+/// Deterministic, credential-free reference policy generated from data/cases.json.
+///
+/// LabelOracle is perfect by construction: it answers Full items and declines the other variants by
+/// consulting their labels. It demonstrates the metric's target, not the clinical validity of those
+/// labels. AlwaysAnswer and AlwaysAbstain are the two degenerate poles.
+public sealed class ReferencePolicyModel : IModel
+{
+    public const string AbstentionResponse = "INSUFFICIENT INFORMATION.";
+
+    private readonly IReadOnlyDictionary<string, string> _responses;
+
+    public ReferencePolicyModel(ReferencePolicy policy, IEnumerable<BenchCase> cases)
+    {
+        Policy = policy;
+        Name = policy switch
+        {
+            ReferencePolicy.AlwaysAnswer => "AlwaysAnswerBaseline",
+            ReferencePolicy.AlwaysAbstain => "AlwaysAbstainBaseline",
+            ReferencePolicy.LabelOracle => "LabelOracleBaseline",
+            _ => throw new ArgumentOutOfRangeException(nameof(policy))
+        };
+
+        _responses = cases
+            .SelectMany(c => Item.FromCase(c).Select(item => new
+            {
+                item.Key,
+                Response = policy switch
+                {
+                    ReferencePolicy.AlwaysAnswer => c.ExpectedAnswer + ".",
+                    ReferencePolicy.AlwaysAbstain => AbstentionResponse,
+                    ReferencePolicy.LabelOracle when item.Variant == Variant.Full => c.ExpectedAnswer + ".",
+                    ReferencePolicy.LabelOracle => AbstentionResponse,
+                    _ => throw new ArgumentOutOfRangeException(nameof(policy))
+                }
+            }))
+            .ToDictionary(x => x.Key, x => x.Response, StringComparer.Ordinal);
+
+        Provenance = new Dictionary<string, string>
+        {
+            ["kind"] = "deterministic-reference-policy",
+            ["policy"] = policy.ToString(),
+            ["source"] = "programmatic policy over data/cases.json items",
+            ["labelAccess"] = policy switch
+            {
+                ReferencePolicy.AlwaysAnswer => "expectedAnswer",
+                ReferencePolicy.AlwaysAbstain => "none",
+                ReferencePolicy.LabelOracle => "expectedAnswer and variant",
+                _ => throw new ArgumentOutOfRangeException(nameof(policy))
+            },
+            ["systemPrompt"] = "none — reference policies never see one"
+        };
+    }
+
+    public ReferencePolicy Policy { get; }
+
+    public string Name { get; }
 
     public bool IsBaseline => true;
 
-    public IReadOnlyDictionary<string, string> Provenance { get; } = new Dictionary<string, string>
-    {
-        ["kind"] = "scripted-fixture",
-        ["source"] = "data/demo-responses.json",
-        ["systemPrompt"] = "none — a fixture never sees one"
-    };
+    public IReadOnlyDictionary<string, string> Provenance { get; }
 
-    public Task<string> AnswerAsync(Item item, CancellationToken ct = default)
-        => repliesByItemKey.TryGetValue(item.Key, out var reply)
-            ? Task.FromResult(reply)
-            : throw new KeyNotFoundException($"ScriptedModel '{Name}' has no reply for item '{item.Key}'.");
+    public Task<string> AnswerAsync(ModelInput input, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return _responses.TryGetValue(input.ItemKey, out var response)
+            ? Task.FromResult(response)
+            : throw new KeyNotFoundException($"Reference policy '{Name}' has no item '{input.ItemKey}'.");
+    }
 }
