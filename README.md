@@ -54,10 +54,27 @@ honesty, the calibrated model 100 %.
 ## Run it
 
 ```bash
-dotnet test                                         # 14 unit + integration tests
+dotnet test                                         # 15 unit + integration tests
 dotnet run --project src/AbstentionBench -- demo    # offline demo, no credentials
 dotnet run --project src/AbstentionBench -- demo --gate 0.9   # fail if any model abstains < 90%
+dotnet run --project src/AbstentionBench -- ollama --model llama3.2:3b --html report.html
+                                                    # + a real local LLM via Ollama, with an HTML report
 ```
+
+## A real model, measured
+
+Running `llama3.2:3b` (Ollama, temperature 0, with the abstention option offered in the
+system prompt) against the 12 case pairs:
+
+| model | abstain-recall | bluff-rate | answer-acc | honesty |
+|---|---|---|---|---|
+| CalibratedBot | 100 % | 0 % | 100 % | 100 % |
+| BluffBot | 0 % | 100 % | 100 % | 50 % |
+| **llama3.2:3b** | **0 %** | **100 %** | 50 % | 25 % |
+
+The 3B model bluffed on **every** degraded case — it confidently produced a diagnosis each
+time the decisive finding was missing. That is precisely the failure mode this benchmark
+makes visible. `--html report.html` renders the scorecard as a self-contained page.
 
 The harness is **fail-closed**: it exits non-zero if any item can't be scored or a requested model
 is unavailable — a missing credential is an *error*, never a silent skip.

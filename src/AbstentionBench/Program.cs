@@ -18,6 +18,7 @@ try
     return opts.Mode switch
     {
         "demo" => await RunDemoAsync(opts),
+        "ollama" => await RunDemoAsync(opts, new OllamaModel(opts.Model ?? "llama3.2:3b")),
         "llm" => RunLlm(opts),
         _ => Usage()
     };
@@ -28,14 +29,15 @@ catch (Exception ex)
     return 1; // fail closed
 }
 
-async Task<int> RunDemoAsync(Args o)
+async Task<int> RunDemoAsync(Args o, IModel? liveModel = null)
 {
     var dataDir = Bench.FindDataDir(o.DataDir);
     var cases = Bench.LoadCases(dataDir);
     var items = Bench.ItemsFor(cases);
     var models = Bench.LoadDemoModels(dataDir);
+    if (liveModel is not null) models.Add(liveModel);
 
-    Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} demo models\n");
+    Console.WriteLine($"clinical-abstention-bench · {cases.Count} cases → {items.Count} items · {models.Count} models\n");
 
     var cards = new List<Scorecard>();
     foreach (var model in models)
@@ -46,6 +48,11 @@ async Task<int> RunDemoAsync(Args o)
 
     PrintTable(cards);
     WriteReport(o.OutPath, cases.Count, items.Count, cards);
+    if (o.HtmlPath is { } htmlPath)
+    {
+        File.WriteAllText(htmlPath, HtmlReport.Render(cases.Count, items.Count, cards, cases[0]));
+        Console.WriteLine($"html report → {htmlPath}");
+    }
 
     if (o.Gate is { } threshold)
     {
@@ -115,18 +122,21 @@ static int Usage()
 
         usage:
           dotnet run -- demo              run the offline demo models (default, no credentials)
-          dotnet run -- llm               run a live model (needs ANTHROPIC_API_KEY; v1)
+          dotnet run -- ollama            demo models + a real local LLM via Ollama (default llama3.2:3b)
+          dotnet run -- llm               run a live cloud model (needs ANTHROPIC_API_KEY; v1)
 
         flags:
-          --data <dir>     path to the data/ folder (auto-detected by default)
-          --gate <0..1>    fail the run if any model's abstention recall is below this
-          --out  <file>    report path (default: report.json)
+          --data  <dir>    path to the data/ folder (auto-detected by default)
+          --gate  <0..1>   fail the run if any model's abstention recall is below this
+          --out   <file>   report path (default: report.json)
+          --html  <file>   also write a self-contained HTML report
+          --model <name>   ollama model tag (default: llama3.2:3b)
         """);
     return 0;
 }
 
 /// Tiny arg holder.
-file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPath)
+file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPath, string? HtmlPath, string? Model)
 {
     public static Args Parse(string[] argv)
     {
@@ -134,6 +144,8 @@ file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPa
         string? dataDir = null;
         double? gate = null;
         var outPath = "report.json";
+        string? htmlPath = null;
+        string? model = null;
 
         for (var i = 0; i < argv.Length; i++)
         {
@@ -141,11 +153,13 @@ file sealed record Args(string Mode, string? DataDir, double? Gate, string OutPa
             {
                 case "--data" when i + 1 < argv.Length: dataDir = argv[++i]; break;
                 case "--out" when i + 1 < argv.Length: outPath = argv[++i]; break;
+                case "--html" when i + 1 < argv.Length: htmlPath = argv[++i]; break;
+                case "--model" when i + 1 < argv.Length: model = argv[++i]; break;
                 case "--gate" when i + 1 < argv.Length
                     && double.TryParse(argv[++i], NumberStyles.Float, CultureInfo.InvariantCulture, out var g):
                     gate = g; break;
             }
         }
-        return new Args(mode, dataDir, gate, outPath);
+        return new Args(mode, dataDir, gate, outPath, htmlPath, model);
     }
 }
