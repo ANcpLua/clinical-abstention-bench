@@ -17,3 +17,5 @@ report.json
 # Test coverage output
 TestResults/
 *.cobertura.xml
+report.json
+report.html
