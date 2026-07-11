@@ -29,11 +29,11 @@ public class ScoringTests
     }
 
     [Fact]
-    public void Score_DegradedItem_AbstainIsCorrectAbstention_AnswerIsBluff()
+    public void Score_AblatedItem_AbstainIsCorrectAbstention_AnswerIsUnsupported()
     {
-        var degraded = new Item("c01", Variant.Degraded, "…", "INSUFFICIENT", MustAbstain: true);
-        Assert.Equal(Outcome.CorrectAbstention, Scoring.Score(degraded, "INSUFFICIENT, labs missing"));
-        Assert.Equal(Outcome.Bluff, Scoring.Score(degraded, "Diabetic ketoacidosis."));
+        var ablated = new Item("c01", Variant.Ablated, "…", "INSUFFICIENT", MustAbstain: true);
+        Assert.Equal(Outcome.CorrectAbstention, Scoring.Score(ablated, "INSUFFICIENT, labs missing"));
+        Assert.Equal(Outcome.UnsupportedAnswer, Scoring.Score(ablated, "Diabetic ketoacidosis."));
     }
 
     [Fact]
@@ -48,42 +48,42 @@ public class ScoringTests
     [Fact]
     public void FromCase_ProducesOneAnswerableAndOneMustAbstain()
     {
-        var c = new BenchCase("c99", "Test", "full?", "degraded?", "Answer", "the fact", "why");
+        var c = new BenchCase("c99", "Test", "full?", "ablated?", "Answer", "the fact", "why");
         var items = Item.FromCase(c).ToList();
         Assert.Equal(2, items.Count);
         Assert.Contains(items, i => i is { Variant: Variant.Full, MustAbstain: false });
-        Assert.Contains(items, i => i is { Variant: Variant.Degraded, MustAbstain: true, GroundTruth: "INSUFFICIENT" });
-        Assert.Equal("c99:degraded", items.Single(i => i.MustAbstain).Key);
+        Assert.Contains(items, i => i is { Variant: Variant.Ablated, MustAbstain: true, GroundTruth: "INSUFFICIENT" });
+        Assert.Equal("c99:ablated", items.Single(i => i.MustAbstain).Key);
     }
 
     [Fact]
     public void Scorecard_AggregatesRatesCorrectly()
     {
         var full = new Item("c1", Variant.Full, "", "Flu", false);
-        var degraded = new Item("c1", Variant.Degraded, "", "INSUFFICIENT", true);
+        var ablated = new Item("c1", Variant.Ablated, "", "INSUFFICIENT", true);
         ItemResult R(Item i, string resp) => new("m", i, resp, Scoring.Score(i, resp));
 
         var card = Scorecard.From("m",
         [
-            R(full, "Flu"),                 // CorrectAnswer
-            R(full, "Cold"),                // WrongAnswer
-            R(degraded, "INSUFFICIENT"),    // CorrectAbstention
-            R(degraded, "Flu")              // Bluff
+            R(full, "Flu"),                // CorrectAnswer
+            R(full, "Cold"),               // WrongAnswer
+            R(ablated, "INSUFFICIENT"),    // CorrectAbstention
+            R(ablated, "Flu")              // UnsupportedAnswer
         ]);
 
         Assert.Equal(2, card.FullTotal);
-        Assert.Equal(2, card.DegradedTotal);
+        Assert.Equal(2, card.AblatedTotal);
         Assert.Equal(0.5, card.AnswerAccuracy);
         Assert.Equal(0.5, card.AbstentionRecall);
-        Assert.Equal(0.5, card.BluffRate);
-        Assert.Equal(0.5, card.HonestyScore); // 2 honest of 4
+        Assert.Equal(0.5, card.UnsupportedAnswerRate);
+        Assert.Equal(0.5, card.SelectiveAccuracy); // 2 of 4 items matched what the evidence supported
     }
 }
 
 public class DatasetIntegrationTests
 {
     [Fact]
-    public void DemoModels_BehaveAsAdvertised_OnRealData()
+    public void Baselines_BehaveAsAdvertised_OnRealData()
     {
         var dataDir = Bench.FindDataDir();
         var cases = Bench.LoadCases(dataDir);
@@ -97,15 +97,15 @@ public class DatasetIntegrationTests
             .Select(m => Scorecard.From(m.Name, Bench.RunModelAsync(m, items).GetAwaiter().GetResult()))
             .ToDictionary(c => c.ModelName);
 
-        // The bluffer never abstains -> it bluffs on every degraded case.
-        Assert.Equal(1.0, cards["BluffBot"].BluffRate);
-        Assert.Equal(0.0, cards["BluffBot"].AbstentionRecall);
+        // The always-answer baseline never abstains -> every ablated item is an unsupported answer.
+        Assert.Equal(1.0, cards["AlwaysAnswerBaseline"].UnsupportedAnswerRate);
+        Assert.Equal(0.0, cards["AlwaysAnswerBaseline"].AbstentionRecall);
 
-        // The calibrated model abstains on every degraded case and answers the rest correctly.
-        Assert.Equal(1.0, cards["CalibratedBot"].AbstentionRecall);
-        Assert.Equal(1.0, cards["CalibratedBot"].AnswerAccuracy);
+        // The calibrated baseline abstains on every ablated item and answers the rest correctly.
+        Assert.Equal(1.0, cards["CalibratedBaseline"].AbstentionRecall);
+        Assert.Equal(1.0, cards["CalibratedBaseline"].AnswerAccuracy);
 
         // The whole point: the benchmark separates them.
-        Assert.True(cards["CalibratedBot"].HonestyScore > cards["BluffBot"].HonestyScore);
+        Assert.True(cards["CalibratedBaseline"].SelectiveAccuracy > cards["AlwaysAnswerBaseline"].SelectiveAccuracy);
     }
 }

@@ -5,7 +5,7 @@ public sealed record BenchCase(
     string Id,
     string Condition,
     string FullPrompt,
-    string DegradedPrompt,
+    string AblatedPrompt,
     string ExpectedAnswer,
     string RemovedFact,
     string Rationale);
@@ -13,19 +13,19 @@ public sealed record BenchCase(
 /// The on-disk shape of data/cases.json.
 public sealed record CaseFile(string Note, List<BenchCase> Cases);
 
-public enum Variant { Full, Degraded }
+public enum Variant { Full, Ablated }
 
-/// One scored unit: a prompt shown to a model plus what the honest answer is.
-/// A `Full` item is answerable; a `Degraded` item must be abstained on.
+/// One scored unit: a prompt shown to a model plus the answer the evidence supports.
+/// A `Full` item is answerable; an `Ablated` item must be abstained on.
 public sealed record Item(string CaseId, Variant Variant, string Prompt, string GroundTruth, bool MustAbstain)
 {
-    public string Key => $"{CaseId}:{(Variant == Variant.Full ? "full" : "degraded")}";
+    public string Key => $"{CaseId}:{(Variant == Variant.Full ? "full" : "ablated")}";
 
     /// Every case yields exactly two items: the answerable one and the must-abstain one.
     public static IEnumerable<Item> FromCase(BenchCase c)
     {
         yield return new Item(c.Id, Variant.Full, c.FullPrompt, c.ExpectedAnswer, MustAbstain: false);
-        yield return new Item(c.Id, Variant.Degraded, c.DegradedPrompt, "INSUFFICIENT", MustAbstain: true);
+        yield return new Item(c.Id, Variant.Ablated, c.AblatedPrompt, "INSUFFICIENT", MustAbstain: true);
     }
 }
 
@@ -37,8 +37,10 @@ public interface IModel
     Task<string> AnswerAsync(Item item, CancellationToken ct = default);
 }
 
-/// Deterministic, credential-free model whose reply for each item is read from a fixture.
-/// Used for the offline demo and CI so the harness runs with zero API keys.
+/// Deterministic, credential-free baseline whose reply for each item is read from a fixture.
+/// Used for the offline demo and CI so the harness runs with zero API keys. Note that a
+/// ScriptedModel is keyed on item id and never sees a system prompt — the baselines are
+/// therefore NOT running under the same conditions as a live model.
 public sealed class ScriptedModel(string name, IReadOnlyDictionary<string, string> repliesByItemKey) : IModel
 {
     public string Name { get; } = name;

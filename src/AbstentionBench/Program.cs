@@ -2,14 +2,16 @@ using System.Globalization;
 using System.Text.Json;
 using ClinicalAbstentionBench;
 
-// clinical-abstention-bench — does a medical model know when it does NOT know?
+// clinical-abstention-bench — selective prediction on clinical vignettes.
 //
 // Each case is shown twice: once with the decisive finding present (the model SHOULD answer)
-// and once with it removed (the model SHOULD abstain). We score answering-vs-bluffing.
+// and once with it removed (the model SHOULD abstain). We score answering-when-supported
+// against answering-when-unsupported.
 //
 // Fail-closed, mirroring the ancplua.evaluation engine: the run exits 0 only when every item
 // was scored and the report was written. A requested-but-unavailable model is an ERROR (exit 1),
-// never a silent skip. An optional --gate <recall> also fails the run if any model bluffs too much.
+// never a silent skip. An optional --gate <recall> also fails the run if a model's abstention
+// recall falls below the threshold.
 
 var opts = Args.Parse(args);
 
@@ -50,7 +52,7 @@ async Task<int> RunDemoAsync(Args o, IModel? liveModel = null)
     WriteReport(o.OutPath, cases.Count, items.Count, cards);
     if (o.HtmlPath is { } htmlPath)
     {
-        File.WriteAllText(htmlPath, HtmlReport.Render(cases.Count, items.Count, cards, cases[0]));
+        File.WriteAllText(htmlPath, ScorecardPage.Render(cases.Count, items.Count, cards, cases[0]));
         Console.WriteLine($"html report → {htmlPath}");
     }
 
@@ -86,13 +88,13 @@ int RunLlm(Args o)
 
 static void PrintTable(IReadOnlyList<Scorecard> cards)
 {
-    Console.WriteLine($"{"model",-16} {"abstain-recall",15} {"bluff-rate",12} {"answer-acc",12} {"over-abstain",13} {"honesty",9}");
-    Console.WriteLine(new string('─', 82));
+    Console.WriteLine($"{"model",-22} {"abstain-recall",15} {"unsupported",12} {"answer-acc",12} {"over-abstain",13} {"selective-acc",14}");
+    Console.WriteLine(new string('─', 93));
     foreach (var c in cards)
-        Console.WriteLine($"{c.ModelName,-16} {Pct(c.AbstentionRecall),15} {Pct(c.BluffRate),12} {Pct(c.AnswerAccuracy),12} {Pct(c.OverAbstentionRate),13} {Pct(c.HonestyScore),9}");
+        Console.WriteLine($"{c.ModelName,-22} {Pct(c.AbstentionRecall),15} {Pct(c.UnsupportedAnswerRate),12} {Pct(c.AnswerAccuracy),12} {Pct(c.OverAbstentionRate),13} {Pct(c.SelectiveAccuracy),14}");
     Console.WriteLine();
-    Console.WriteLine("abstain-recall: of the must-abstain (degraded) cases, how many the model correctly declined.");
-    Console.WriteLine("bluff-rate:     of the must-abstain cases, how many it answered anyway (the dangerous failure).");
+    Console.WriteLine("abstain-recall: of the must-abstain (ablated) items, how many the model correctly declined.");
+    Console.WriteLine("unsupported:    of the must-abstain items, how many it answered anyway — the failure mode this benchmark targets.");
 }
 
 static string Pct(double v) => v.ToString("P0", CultureInfo.InvariantCulture);
@@ -106,8 +108,8 @@ static void WriteReport(string outPath, int caseCount, int itemCount, IReadOnlyL
         models = cards.Select(c => new
         {
             c.ModelName,
-            c.AbstentionRecall, c.BluffRate, c.AnswerAccuracy, c.OverAbstentionRate, c.HonestyScore,
-            c.DegradedTotal, c.CorrectAbstentions, c.Bluffs,
+            c.AbstentionRecall, c.UnsupportedAnswerRate, c.AnswerAccuracy, c.OverAbstentionRate, c.SelectiveAccuracy,
+            c.AblatedTotal, c.CorrectAbstentions, c.UnsupportedAnswers,
             c.FullTotal, c.CorrectAnswers, c.WrongAnswers, c.OverAbstentions
         })
     };
@@ -121,8 +123,8 @@ static int Usage()
         clinical-abstention-bench
 
         usage:
-          dotnet run -- demo              run the offline demo models (default, no credentials)
-          dotnet run -- ollama            demo models + a real local LLM via Ollama (default llama3.2:3b)
+          dotnet run -- demo              run the offline baseline models (default, no credentials)
+          dotnet run -- ollama            baselines + a real local LLM via Ollama (default llama3.2:3b)
           dotnet run -- llm               run a live cloud model (needs ANTHROPIC_API_KEY; v1)
 
         flags:

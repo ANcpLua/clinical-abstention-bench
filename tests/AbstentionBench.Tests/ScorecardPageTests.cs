@@ -3,7 +3,7 @@ using Xunit;
 
 namespace AbstentionBench.Tests;
 
-public class HtmlReportTests
+public class ScorecardPageTests
 {
     [Fact]
     public void Render_ContainsEveryModelAndMetric_AndExampleCase()
@@ -16,12 +16,12 @@ public class HtmlReportTests
             .Select(m => Scorecard.From(m.Name, Bench.RunModelAsync(m, items).GetAwaiter().GetResult()))
             .ToList();
 
-        var html = HtmlReport.Render(cases.Count, items.Count, cards, cases[0]);
+        var html = ScorecardPage.Render(cases.Count, items.Count, cards, cases[0]);
 
         Assert.StartsWith("<!doctype html>", html);
         foreach (var card in cards)
             Assert.Contains(card.ModelName, html);
-        foreach (var metric in new[] { "abstain-recall", "bluff-rate", "answer-acc", "over-abstain", "honesty" })
+        foreach (var metric in new[] { "abstain-recall", "unsupported", "answer-acc", "over-abstain", "selective-acc" })
             Assert.Contains(metric, html);
         Assert.Contains(cases[0].Condition, html);
         Assert.Contains("INSUFFICIENT", html);
