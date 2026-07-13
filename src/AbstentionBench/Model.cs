@@ -26,7 +26,7 @@ public sealed record BenchCase(
 }
 
 /// The on-disk shape of data/cases.json.
-public sealed record CaseFile(int SchemaVersion, string Note, List<BenchCase> Cases);
+public sealed record CaseFile(List<BenchCase> Cases);
 
 /// The three evidence states are nested in JSON so case-level adjudication is not repeated in each
 /// item. Their relation to the original concept is derived from the property name.
@@ -95,7 +95,7 @@ public sealed record DiagnosticConcept(
     IReadOnlyList<string> Aliases);
 
 /// The on-disk shape of data/concepts.json.
-public sealed record ConceptFile(int SchemaVersion, string MatchingPolicy, List<DiagnosticConcept> Concepts);
+public sealed record ConceptFile(List<DiagnosticConcept> Concepts);
 
 /// Result of resolving one structured `diagnosis` field through the concept catalog.
 public sealed record ConceptResolution(string ConceptId, string MatchedForm);

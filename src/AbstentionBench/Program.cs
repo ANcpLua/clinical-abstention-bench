@@ -82,13 +82,6 @@ async Task<int> RunBenchAsync(Args o, bool live)
     Report.Write(o.OutPath, report);
     Console.WriteLine($"report → {o.OutPath}  ({report.Transcripts.Count} per-item transcripts)");
 
-    if (o.HtmlPath is { } htmlPath)
-    {
-        var baselines = models.Where(m => m.IsBaseline).Select(m => m.Name).ToHashSet();
-        File.WriteAllText(htmlPath, ScorecardPage.Render(cases.Count, items.Count, cards, cases[0], baselines));
-        Console.WriteLine($"html report → {htmlPath}");
-    }
-
     if (o.GateCoverage is not null || o.GateSelectiveAccuracy is not null || o.GateUrgencyAccuracy is not null)
     {
         var gate = Gate.Check(cards, o.GateCoverage, o.GateSelectiveAccuracy, o.GateUrgencyAccuracy);
@@ -187,7 +180,6 @@ static int Usage(string? unknownMode = null)
                                  user template but never receive a system message.
           --no-baselines         drop the programmatic reference policies from the run
           --out   <file>         report path (default: report.json)
-          --html  <file>         also write a self-contained HTML report
           --model <name>         ollama model tag (default: llama3.2:3b)
 
         examples:
@@ -206,7 +198,6 @@ file sealed record Args(
     double? GateSelectiveAccuracy,
     double? GateUrgencyAccuracy,
     string OutPath,
-    string? HtmlPath,
     string? Model,
     IReadOnlyList<string> Only,
     bool NoBaselines,
@@ -220,7 +211,6 @@ file sealed record Args(
         double? gateSelectiveAccuracy = null;
         double? gateUrgencyAccuracy = null;
         var outPath = "report.json";
-        string? htmlPath = null;
         string? model = null;
         var only = new List<string>();
         var prompts = new List<string>();
@@ -235,9 +225,6 @@ file sealed record Args(
                     break;
                 case "--out" when i + 1 < argv.Length:
                     outPath = argv[++i];
-                    break;
-                case "--html" when i + 1 < argv.Length:
-                    htmlPath = argv[++i];
                     break;
                 case "--model" when i + 1 < argv.Length:
                     model = argv[++i];
@@ -272,7 +259,6 @@ file sealed record Args(
             gateSelectiveAccuracy,
             gateUrgencyAccuracy,
             outPath,
-            htmlPath,
             model,
             only,
             noBaselines,

@@ -1,12 +1,12 @@
-# Clinical construct review
+# Evidence and construct decisions
 
-Status: evidence-based AI panel adjudication, not clinician sign-off. The v2 cases are synthetic methodology fixtures and are not medical advice. A qualified, independent clinical reviewer is still required before presenting the dataset as clinician-validated.
+Status: evidence-based AI panel adjudication, not clinician sign-off. The cases are synthetic methodology fixtures and are not medical advice. A qualified, independent clinical reviewer is still required before presenting the dataset as clinician-validated.
 
-## Decision
+## Construct
 
-The former negative-flip design is rejected. A normal or negative test often changes probability without logically excluding a diagnosis, and a negative-only vignette commonly remains a differential rather than yielding a scoreable target. Every `contrast` variant now contains positive evidence for a determinate alternative diagnosis.
+A normal or negative test often changes probability without logically excluding a diagnosis, so a negative-only vignette commonly remains a differential rather than yielding a scoreable target. Every `contrast` variant contains positive evidence for a determinate alternative diagnosis.
 
-The old claim that all ablated cases require abstention is also rejected. Seven ablated cases support an answer at an honest level of certainty or granularity:
+Seven ablated cases support an answer at an honest level of certainty or granularity:
 
 - `c02`: probable meningitis, not an organism or bacterial subtype
 - `c03`: probable acute coronary syndrome, not STEMI versus NSTEMI versus unstable angina
@@ -16,7 +16,7 @@ The old claim that all ablated cases require abstention is also rejected. Seven 
 - `c09`: probable acute lower respiratory tract infection, not established pneumonia
 - `c12`: probable hypoglycaemia requiring immediate glucose assessment or treatment
 
-Only `c01`, `c05`, `c07`, `c10`, and `c11` have `diagnosticStatus: indeterminate` after ablation. The previous headline-bearing `c02/c05/c12` grouping therefore does not survive clinical review.
+Only `c01`, `c05`, `c07`, `c10`, and `c11` have `diagnosticStatus: indeterminate` after ablation.
 
 ## Data contract
 
@@ -32,7 +32,7 @@ Certainty and urgency are orthogonal. `emergency` means immediate evaluation or 
 
 `data/concepts.json` is the sole surface-form catalog. `preferredName` and every alias are complete diagnosis strings. Matching ignores case and surrounding whitespace; regional spelling, punctuation, hyphenation, and abbreviations must be declared explicitly. Substring matching is forbidden. Bare adjectives such as “hypoglycemic” and over-specific unsupported causes such as “meningococcal meningitis” or “ruptured aneurysm” are deliberately absent.
 
-Vignettes no longer contain “What is the single most likely diagnosis?” Prompt wording is a controlled experiment owned by `data/prompts.json`, not duplicated inside clinical data. The non-forced-choice arm should be the canonical construct; a forced-choice arm can remain only as a labeled comparison for measuring prompt-induced guessing.
+Vignettes contain evidence only. Prompt wording is a controlled experiment owned by `data/prompts.json`, not duplicated inside clinical data. The evidence-required arm is canonical; forced choice is a labeled comparison for measuring prompt-induced guessing.
 
 ## Case-by-case adjudication
 
@@ -42,13 +42,13 @@ Vignettes no longer contain “What is the single most likely diagnosis?” Prom
 | c02 | **Probable** bacterial meningitis | Probable meningitis | Enteroviral meningitis | The CSF pattern strongly supports bacterial meningitis but does not identify an organism and is not treated as an absolute standalone confirmation. Organism-specific aliases were removed. Suspected meningitis remains an emergency before subtype confirmation. |
 | c03 | Established inferior STEMI | Probable acute coronary syndrome | NSTEMI | A nondiagnostic ECG does not exclude ACS. “Unstable angina” is possible, not established. Dynamic troponin plus ischemic imaging establishes NSTEMI in the contrast. |
 | c04 | Established iron-deficiency anaemia | Established anaemia | Vitamin B12 deficiency anaemia | Removing MCV and iron studies removes aetiology, not the measured anaemia. The benchmark accepts the supported parent-level diagnosis. |
-| c05 | Established primary hypothyroidism | Indeterminate | Iron-deficiency anaemia | Symptoms alone are nonspecific; high TSH with low free T4 establishes primary hypothyroidism. Normal thyroid tests are not used as a negative-only contrast. |
-| c06 | Established gout | **Probable gout; emergency** | Culture-proven *S. aureus* septic arthritis | Typical podagra supports a clinical gout diagnosis, but infection must still be addressed. Negative crystal microscopy does not exclude gout, crystals do not exclude coexisting sepsis, and Gram stain lacks adequate sensitivity to rule it out. The old flip was unsafe and invalid. |
+| c05 | Established primary hypothyroidism | Indeterminate | Iron-deficiency anaemia | Symptoms alone are nonspecific; high TSH with low free T4 establishes primary hypothyroidism. The contrast uses positive evidence for iron-deficiency anaemia. |
+| c06 | Established gout | **Probable gout; emergency** | Culture-proven *S. aureus* septic arthritis | Typical podagra supports a clinical gout diagnosis, but infection must still be addressed. Negative crystal microscopy does not exclude gout, crystals do not exclude coexisting sepsis, and Gram stain lacks adequate sensitivity to rule it out. |
 | c07 | Established hyperkalaemia | Indeterminate emergency | Hypokalaemia | Dialysis plus weakness/palpitations demands immediate testing but does not establish potassium direction. Measured potassium and ECG findings support each determinate arm. |
 | c08 | Established *E. coli* acute cystitis | **Probable acute cystitis; no abstention required** | *Chlamydia trachomatis* infection | In an otherwise healthy, nonpregnant woman, dysuria/frequency without vaginal symptoms supports high-probability cystitis; urinalysis/culture establish the organism-specific full target. Chlamydial NAAT supplies the positive alternative without forcing urethritis versus cervicitis. |
 | c09 | Established community-acquired pneumonia | Probable acute lower respiratory tract infection | Influenza A | Consolidation establishes pneumonia but not a bacterial aetiology. Symptoms without imaging still support a respiratory-infection syndrome. Molecular testing supplies the influenza target. |
-| c10 | Established acute appendicitis | Indeterminate | Ureteric calculus | CT is highly accurate but not logically infallible, so a normal appendix cannot sustain the former absolute “evidence-insensitive” claim. A CT-visible stone makes the contrast determinate. |
-| c11 | Established subarachnoid haemorrhage | Indeterminate emergency | Internal carotid artery dissection | Basal-cistern blood establishes SAH but not an aneurysmal source. The early-CT rule depends on scanner, reader, timing, haemoglobin, and neurologic-status conditions; it is not used as an absolute flip. CTA evidence establishes dissection. |
+| c10 | Established acute appendicitis | Indeterminate | Ureteric calculus | CT is highly accurate but not logically infallible. A CT-visible stone makes the contrast determinate. |
+| c11 | Established subarachnoid haemorrhage | Indeterminate emergency | Internal carotid artery dissection | Basal-cistern blood establishes SAH but not an aneurysmal source. The early-CT rule depends on scanner, reader, timing, haemoglobin, and neurologic-status conditions. CTA evidence establishes dissection. |
 | c12 | Established hypoglycaemia | **Probable hypoglycaemia; no abstention required** | CT-proven intracerebral haemorrhage | Confusion and sweating during insulin treatment support an immediate working diagnosis, glucose check, and treatment. A low value plus symptom resolution establishes the full diagnosis. Adjective-only and invented manifestation aliases were removed. |
 
 ## Evidence used

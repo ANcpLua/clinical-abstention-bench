@@ -1,6 +1,4 @@
 {
-  "schemaVersion": 1,
-  "matchingPolicy": "preferredName and aliases are complete diagnosis strings. Matching ignores case and surrounding whitespace only. Hyphenation, punctuation, abbreviations, and regional spellings must be explicit aliases; substring containment and bare adjective aliases are forbidden.",
   "concepts": [
     {"id":"diabetic_ketoacidosis","preferredName":"Diabetic ketoacidosis","aliases":["DKA","diabetic keto-acidosis"]},
     {"id":"central_diabetes_insipidus","preferredName":"Central diabetes insipidus","aliases":["central DI","neurogenic diabetes insipidus"]},

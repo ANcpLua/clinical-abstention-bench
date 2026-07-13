@@ -44,7 +44,7 @@ public sealed class StructuredConceptGrader : IGrader
         _concepts = concepts;
     }
 
-    public string Name => "structured-concept-v2";
+    public string Name => "structured-concept";
 
     public ItemGrade Score(Item item, string rawResponse)
     {

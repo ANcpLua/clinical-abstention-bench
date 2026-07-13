@@ -7,15 +7,10 @@ obj/
 
 # Benchmark run artifacts
 report.json
+_site/
 
 # IDE / OS
 .idea/
 .vs/
 *.DotSettings.user
 .DS_Store
-
-# Test coverage output
-TestResults/
-*.cobertura.xml
-report.json
-report.html

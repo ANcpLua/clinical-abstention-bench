@@ -71,9 +71,6 @@ public static class Bench
         var path = Path.Combine(dataDir, "cases.json");
         var file = JsonSerializer.Deserialize<CaseFile>(File.ReadAllText(path), Json)
                    ?? throw new InvalidDataException($"{path} did not deserialize.");
-        if (file.SchemaVersion != 2)
-            throw new InvalidDataException(
-                $"{path} has case schema {file.SchemaVersion}; this runner requires schema 2.");
         if (file.Cases.Count == 0)
             throw new InvalidDataException($"{path} contains zero cases.");
         if (file.Cases.Select(c => c.Id).Distinct(StringComparer.Ordinal).Count() != file.Cases.Count)
@@ -94,9 +91,6 @@ public static class Bench
         var path = Path.Combine(dataDir, "concepts.json");
         var file = JsonSerializer.Deserialize<ConceptFile>(File.ReadAllText(path), Json)
                    ?? throw new InvalidDataException($"{path} did not deserialize.");
-        if (file.SchemaVersion != 1)
-            throw new InvalidDataException(
-                $"{path} has concept schema {file.SchemaVersion}; this runner requires schema 1.");
         if (file.Concepts.Count == 0)
             throw new InvalidDataException($"{path} contains zero diagnostic concepts.");
         return file.Concepts;

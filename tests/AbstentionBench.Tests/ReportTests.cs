@@ -58,13 +58,11 @@ public class ReportTests
     }
 
     [Fact]
-    public async Task ReportRecordsSchemaGraderPromptsAndReferencePolicyProvenance()
+    public async Task ReportRecordsGraderPromptsAndReferencePolicyProvenance()
     {
         var report = await BuildRepositoryRunAsync();
 
-        Assert.Equal("5", Report.SchemaVersion);
-        Assert.Equal(Report.SchemaVersion, report.Provenance.SchemaVersion);
-        Assert.Equal("structured-concept-v2", report.Provenance.Grader);
+        Assert.Equal("structured-concept", report.Provenance.Grader);
         Assert.Equal("2026-07-11T09:30:00Z", report.Provenance.TimestampUtc);
         Assert.Equal("demo", report.Provenance.Mode);
         Assert.Equal(RepositoryBenchmark.CanonicalProfile, Assert.Single(report.Provenance.Prompts));

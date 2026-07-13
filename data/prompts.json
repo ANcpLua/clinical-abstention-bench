@@ -1,5 +1,4 @@
 {
-  "_note": "Prompt profiles are complete inference contracts: each profile owns both the system message and the user-message template. The canonical evidence-required profile measures calibrated evidence assessment. The forced-choice profile is a deliberately noncanonical stress arm that measures how much requiring a diagnosis changes behavior. Reference policies receive the canonical rendered user message but no system message; they remain analytical policies over data/cases.json labels, not model competitors.",
   "default": "evidence-required",
   "prompts": [
     {

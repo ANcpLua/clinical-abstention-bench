@@ -1,6 +1,4 @@
 {
-  "schemaVersion": 2,
-  "note": "Synthetic textbook vignettes for methodology research, not patient data or medical advice. Each case has full, ablated, and contrast variants. Targets distinguish diagnostic certainty from urgency: an indeterminate emergency still requires immediate clinical action, while a probable diagnosis can be a supported answer without being established. Contrast variants positively support a determinate alternative diagnosis; they are not negative rule-out stubs.",
   "cases": [
     {
       "id": "c01",
@@ -208,7 +206,7 @@
           }
         }
       },
-      "adjudication": "Typical podagra supports probable gout, but a hot joint remains an emergency until infection is addressed. Negative crystal microscopy does not exclude gout and a negative Gram stain does not exclude septic arthritis, so the former negative flip was invalid. Culture-proven septic arthritis is the determinate contrast."
+      "adjudication": "Typical podagra supports probable gout, but a hot joint remains an emergency until infection is addressed. Negative crystal microscopy does not exclude gout and a negative Gram stain does not exclude septic arthritis. Culture-proven septic arthritis is the determinate contrast."
     },
     {
       "id": "c07",

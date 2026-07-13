@@ -10,56 +10,26 @@ public class ResultArtifactTests
         Path.Combine(RepositoryBenchmark.DataDirectory, "..", "results"));
 
     [Fact]
-    public void EveryCurrentV2ArtifactReplaysAgainstTheCurrentRepositoryContract()
+    public void EveryTrackedArtifactReplaysAgainstTheCurrentRepositoryContract()
     {
-        var currentArtifacts = Directory
+        var artifacts = Directory
             .EnumerateFiles(ResultsDirectory, "*.json", SearchOption.TopDirectoryOnly)
-            .Where(IsSchemaV5)
             .ToList();
 
-        // A repository may temporarily contain no fresh observations during a contract migration.
-        // When a v2 artifact is tracked, however, every grade and aggregate must be reproducible.
-        foreach (var path in currentArtifacts)
+        Assert.NotEmpty(artifacts);
+        foreach (var path in artifacts)
             Replay(path);
-    }
-
-    [Fact]
-    public void LegacyArtifactsRemainParseableFrozenObservations_NotV2ReplayFixtures()
-    {
-        var legacyDirectory = Path.Combine(ResultsDirectory, "legacy-v1");
-        var legacyArtifacts = Directory.Exists(legacyDirectory)
-            ? Directory.EnumerateFiles(legacyDirectory, "*.json", SearchOption.TopDirectoryOnly).ToList()
-            : [];
-
-        Assert.NotEmpty(legacyArtifacts);
-        foreach (var path in legacyArtifacts)
-        {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            var schema = document.RootElement.GetProperty("provenance").GetProperty("schemaVersion").GetString();
-
-            Assert.NotEqual(Report.SchemaVersion, schema);
-            Assert.True(document.RootElement.TryGetProperty("transcripts", out _));
-            // Deliberately do not feed these historical raw responses through the v2 grader: their
-            // prompts, targets, outcome taxonomy, and aggregate denominators belong to schema v4.
-        }
-    }
-
-    private static bool IsSchemaV5(string path)
-    {
-        using var document = JsonDocument.Parse(File.ReadAllText(path));
-        return document.RootElement.GetProperty("provenance").GetProperty("schemaVersion").GetString()
-               == Report.SchemaVersion;
     }
 
     private static void Replay(string path)
     {
         var json = File.ReadAllText(path);
         var report = JsonSerializer.Deserialize<RunReport>(json, Bench.Json)
-                     ?? throw new InvalidDataException($"{path} did not deserialize as a v2 report.");
+                     ?? throw new InvalidDataException($"{path} did not deserialize as a benchmark report.");
         var items = RepositoryBenchmark.Items.ToDictionary(item => item.Key, StringComparer.Ordinal);
         var resultsByModel = new Dictionary<string, List<ItemResult>>(StringComparer.Ordinal);
 
-        Assert.Equal(Report.SchemaVersion, report.Provenance.SchemaVersion);
+        Assert.Equal(RepositoryBenchmark.Grader.Name, report.Provenance.Grader);
         Assert.Equal(RepositoryBenchmark.Cases.Count, report.Cases);
         Assert.Equal(RepositoryBenchmark.Items.Count, report.Items);
 

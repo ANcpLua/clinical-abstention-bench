@@ -3,14 +3,9 @@ using System.Text.Json.Serialization;
 
 namespace ClinicalAbstentionBench;
 
-/// Auditable JSON report for the v2 structured diagnostic-selectivity contract.
+/// Auditable JSON report for structured diagnostic selectivity.
 public static class Report
 {
-    /// Version 5 is a deliberate contract replacement: structured responses, concept ids, diagnostic
-    /// status, urgency, alternative-supported contrasts, and selective-prediction metrics replace the
-    /// v4 lexical outcomes and diagnosis-exclusion probe.
-    public const string SchemaVersion = "5";
-
     public static RunReport Build(
         string mode,
         int caseCount,
@@ -23,7 +18,6 @@ public static class Report
         IReadOnlyList<PromptProfile>? prompts = null)
     {
         var provenance = new RunProvenance(
-            SchemaVersion,
             timestamp.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ"),
             mode,
             grader.Name,
@@ -115,7 +109,6 @@ public sealed record RunReport(
     IReadOnlyList<TranscriptEntry> Transcripts);
 
 public sealed record RunProvenance(
-    string SchemaVersion,
     string TimestampUtc,
     string Mode,
     string Grader,

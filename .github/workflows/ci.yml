@@ -5,29 +5,27 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.x'
 
       - name: Build (warnings are errors)
         run: dotnet build -c Release
 
-      - name: Test (with coverage)
-        run: dotnet test -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ./TestResults
+      - name: Test
+        run: dotnet test -c Release --no-build
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5.4.3
-        with:
-          files: ./TestResults/**/coverage.cobertura.xml
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      - name: Validate site JavaScript
+        run: node --check site/app.js
 
       - name: Demo run (offline, no credentials)
         run: dotnet run -c Release --no-build --project src/AbstentionBench -- demo
@@ -58,3 +56,35 @@ jobs:
             exit 1
           fi
           echo "gate correctly failed the model that answers nothing"
+
+  deploy-site:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Assemble static site
+        run: |
+          mkdir -p _site/data _site/results
+          cp -R site/. _site/
+          cp data/cases.json data/concepts.json _site/data/
+          cp results/llama3.2-3b.json _site/results/
+          touch _site/.nojekyll
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

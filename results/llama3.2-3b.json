@@ -1,9 +1,8 @@
 {
   "provenance": {
-    "schemaVersion": "5",
     "timestampUtc": "2026-07-11T09:14:56Z",
     "mode": "ollama",
-    "grader": "structured-concept-v2",
+    "grader": "structured-concept",
     "prompts": [
       {
         "name": "evidence-required",
